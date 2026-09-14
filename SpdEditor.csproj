@@ -6,16 +6,52 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- WinForms 系统色/深色模式 API -->
+    <NoWarn>$(NoWarn);WFO5001</NoWarn>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <DefaultItemExcludes>$(DefaultItemExcludes);third_party\**</DefaultItemExcludes>
+
+    <!-- 程序版本 Ver.001 -->
+    <Version>0.0.1</Version>
+    <AssemblyVersion>0.0.1.0</AssemblyVersion>
+    <FileVersion>0.0.1.0</FileVersion>
+    <InformationalVersion>Ver.001</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>DDR3/DDR4/DDR5 内存SPD信息修改器</Product>
+    <Company>SuperGun</Company>
+
+    <!-- 单文件自包含：依赖打进一个 exe -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- 不把 Content 在首次启动时全部解压（PawnIO 仅嵌入资源，用时再释放） -->
+    <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
+    <!-- 关闭单文件压缩：显著加快首次启动解压（体积略增） -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <!-- 关闭 R2R：减小包体、加快首次解压；二次启动仍可接受 -->
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="RAMSPDToolkit" Version="1.6.1" />
     <PackageReference Include="System.IO.Ports" Version="10.0.12" />
   </ItemGroup>
 
+  <!-- 仅嵌入程序集：安装驱动时再释放，避免单文件首次启动解压 3MB+ 安装包 -->
   <ItemGroup>
-    <None Update="Core\Xmp\speed_bins.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <EmbeddedResource Include="Assets\PawnIO_setup.exe" LogicalName="SpdEditor.Assets.PawnIO_setup.exe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Core\**\*.json" Condition="Exists('Core')" />
   </ItemGroup>
 
 </Project>

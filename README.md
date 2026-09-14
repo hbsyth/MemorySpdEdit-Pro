@@ -1,27 +1,33 @@
-# DDR4/DDR5 内存 SPD 信息安全编辑器
+# DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  **Ver.001**
 
-基于 [spdrw/spdrw.github.io](https://github.com/spdrw/spdrw.github.io) 串口协议实现的 Windows 桌面版 SPD 编辑工具。
+Windows 桌面版 SPD 读写与编辑工具，支持：
+- [spdrw](https://github.com/spdrw/spdrw.github.io) 文本串口协议
+- [1a2m3/SPD-Reader-Writer](https://github.com/1a2m3/SPD-Reader-Writer) Arduino 二进制协议（自动探测）
+- **本机 SMBus 只读**（经 [RAMSPDToolkit](https://github.com/Blacktempel/RAMSPDToolkit) + WinRing0）
 
 ## 功能
 
-- COM 串口连接 SPD 读写器（115200 波特率）
-- 读取 / 写入物理芯片 SPD 数据
-- 载入 / 备份 BIN 文件
-- 修改内存品牌、颗粒制造商、序列号、产品型号、生产日期
-- 一键快捷操作（无序列、随机型号/SN、还原初始状态）
+- COM 串口连接 SPD 读写器（115200）：读取 / 烧录 / 解锁 / 上锁
+- **端口下拉可选「SMBus本机」**：直接读取主板上内存条 SPD（只读，需管理员）
+- 载入 / 保存 BIN
+- 修改内存品牌、颗粒厂家、序列号、产品型号、生产日期
+- 一键随机、还原初始状态
 - 批量模式：写入成功后 SN 自动递增
+- 烧录前：参数无变更则跳过；检测写保护；可选备份原始 BIN
 - 实时操作日志
-- **XMP/EXPO/频率/时序/电压高级编辑**（基于 [ddrxmpeditor-pro](https://github.com/cnns2022/ddrxmpeditor-pro)）
-  - DDR4: JEDEC SPD + XMP 2.0 (2 Profiles)
-  - DDR5: JEDEC SPD + XMP 3.0 (5 Profiles) + EXPO (2 Profiles)
-  - Speed Bin 数据库（DDR4 23 / DDR5 63 档），一键 Apply 填充时序
-  - 电压编辑 (VDD/VDDQ/VPP/VMEMCTRL)
-  - 命令速率 (1N/2N/3N)、Intel DMB、Realtime OC
-  - Profile 名称、CAS Latency 勾选、EXPO 启用开关
-  - **杂项 (Misc)**：Form Factor、制造信息、料号、散热片、Bank Groups
-  - **XMP Profile 复制**（源 → 目标）
-  - **XMP/EXPO Profile 导入/导出**（.bin 文件，DDR5 64B / DDR4 47B / EXPO 40B）
-  - CRC-16/XMODEM 自动重算
+
+## SMBus 使用说明
+
+1. **右键 → 以管理员身份运行**本程序  
+2. 端口选择 **SMBus本机** → 打开端口 → 读取 BIN  
+3. 烧录 / 解锁 / 上锁仍须改用 COM 外置读写器  
+
+**驱动**：程序已内置官方签名版 [PawnIO](https://pawnio.eu) 安装包（`PawnIO_setup.exe`）。打开 SMBus 时：
+
+- **已安装 PawnIO** → 直接连接  
+- **未安装** → 弹窗提示，确认后静默安装；若返回需重启则重启后再用  
+
+若 PawnIO 仍不可用，会回退尝试 WinRing0（可能被「内存完整性」拦截）。部分笔记本 BIOS 可能限制 SMBus 探测。
 
 ## 运行
 
@@ -29,40 +35,44 @@
 dotnet run --project SpdEditor.csproj
 ```
 
-或直接运行编译产物：
+单文件自包含发布：
 
+```powershell
+dotnet publish SpdEditor.csproj -c Release -r win-x64 -o .\publish
 ```
-bin\Release\net10.0-windows\SpdEditor.exe
-```
 
-## 硬件要求
+产物：`publish\SpdEditor.exe`（一个文件即可拷贝运行）。
 
-需要配合 SPD 读写器硬件（如 CH341 / 树莓派 Pico 等），通过 COM 口通信。协议帧格式：
+说明：首次启动会把运行库解压到临时目录，可能稍慢；之后启动会快很多。已关闭单文件压缩与 R2R，并避免启动时解压 PawnIO 安装包，以缩短首次等待。
+
+## 硬件
+
+- **串口模式**：需 SPD 读写器（CH341 / Pico / Arduino 固件等）
+- **SMBus 模式**：无需外置硬件，直接读本机插槽
+
+spdrw 帧格式：
 
 ```
 AA 55 [cmd] [deviceType] [addrHi] [addrLo] 00 [data] [crc8]
 ```
 
-- `cmd=0x05` 读取 SPD
-- `cmd=0x02` 写入单字节
-- `deviceType`: 3=256B, 4=512B(DDR4), 5=1024B(DDR5)
-
 ## 项目结构
 
 ```
 Core/
-  SpdProtocol.cs         - 串口协议（移植自 spdrw）
-  SpdParser.cs           - SPD 数据解析
-  SpdEditorLogic.cs      - 字段修改逻辑
-  SerialDeviceService.cs - COM 口通信
-  JedecManufacturers.cs  - JEDEC 制造商 ID
-  Xmp/                   - XMP/EXPO 高级编辑（移植自 ddrxmpeditor-pro）
-    SpdUtils.cs          - CRC、电压、时序转换
-    SpeedBinService.cs   - Speed Bin 应用
-    Ddr4AdvancedModel.cs - DDR4 SPD + XMP 2.0
-    Ddr5AdvancedModel.cs - DDR5 SPD + XMP 3.0 + EXPO
-    speed_bins.json      - JEDEC Speed Bin 数据库
-AdvancedEditorForm.cs  - 高级编辑对话框
-MainForm.cs            - 主界面逻辑
-MainForm.Designer.cs   - 界面布局
+  SpdProtocol.cs         - spdrw 串口协议
+  SpdArduinoProtocol.cs  - Arduino 固件协议常量
+  SpdArduinoDevice.cs    - Arduino 读写 / RSWP
+  SmbusSpdService.cs     - 本机 SMBus 只读
+  SerialDeviceService.cs - COM 通信
+  SpdParser.cs           - SPD 解析
+  SpdEditorLogic.cs      - 字段写回与 CRC
+  SpdUtils.cs            - CRC 与时序换算
+  JedecManufacturers.cs  - JEP106 制造商表
+Assets/                  - 应用图标
+MainForm.* / Program.cs
 ```
+
+## 第三方许可
+
+- RAMSPDToolkit：MPL 2.0（含 WinRing0）

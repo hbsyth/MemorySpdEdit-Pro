@@ -43,6 +43,7 @@ public static class SpdProtocol
         frame[5] = (byte)(address & 0xFF);
         frame[6] = 0;
         frame[7] = data;
+        // 与 spdrw 一致：CRC 覆盖 type..data（frame[2..7]）
         frame[8] = Crc8(frame.AsSpan(2, 6));
         return frame;
     }

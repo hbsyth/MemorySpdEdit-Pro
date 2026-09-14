@@ -1,6 +1,8 @@
 # Build outputs
 bin/
 obj/
+publish/
+publish_new/
 
 # User-specific
 *.user
@@ -22,3 +24,6 @@ Desktop.ini
 *.pem
 *.key
 credentials.json
+
+# Local clones / experiments (not part of the app)
+third_party/
