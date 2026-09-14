@@ -11,7 +11,8 @@
     <NoWarn>$(NoWarn);WFO5001</NoWarn>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <DefaultItemExcludes>$(DefaultItemExcludes);third_party\**</DefaultItemExcludes>
+    <AssemblyName>MemorySpdEdit-Pro</AssemblyName>
+    <DefaultItemExcludes>$(DefaultItemExcludes);third_party\**;installer\**;publish\**;dist\**;launcher\**</DefaultItemExcludes>
 
     <!-- 程序版本 Ver.001 -->
     <Version>0.0.1</Version>

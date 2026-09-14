@@ -43,7 +43,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"; Flags: checkedonce
 
 [Files]
-Source: "..\publish\green\SpdEditor.exe"; DestName: "{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\publish\green\MemorySpdEdit-Pro.exe"; DestName: "{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -14,7 +14,7 @@ internal static class Program
     private const string AppUrl = "https://github.com/hbsyth/MemorySpdEdit-Pro";
     private const string ExeName = "MemorySpdEdit-Pro.exe";
     private const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\MemorySpdEditPro";
-    private const string PayloadResource = "SetupApp.Payload.SpdEditor.exe";
+    private const string PayloadResource = "SetupApp.Payload.MemorySpdEdit-Pro.exe";
 
     [STAThread]
     private static void Main()

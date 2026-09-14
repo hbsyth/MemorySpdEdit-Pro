@@ -1,0 +1,5 @@
+#include <winres.h>
+#include "resource.h"
+
+IDI_APPICON ICON "..\\Assets\\app.ico"
+IDR_APP_PAYLOAD RCDATA "payload.exe"

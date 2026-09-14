@@ -4,6 +4,8 @@ obj/
 publish/
 publish_new/
 dist/
+launcher/build/
+launcher/payload.exe
 
 # User-specific
 *.user
@@ -32,3 +34,7 @@ third_party/
 # Installer build intermediates
 installer/SetupApp/bin/
 installer/SetupApp/obj/
+
+launcher/*.obj
+launcher/*.exe
+

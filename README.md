@@ -18,7 +18,7 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（Ver.
 | 包 | 说明 |
 |---|---|
 | `MemorySpdEdit-Pro-Ver.001-Setup.zip` | **安装版**：解压后运行 `MemorySpdEdit-Pro-Setup.exe`，安装到 Program Files，可创建桌面快捷方式并卸载 |
-| `MemorySpdEdit-Pro-Ver.001-Portable.zip` | **绿色版**：解压整个目录，双击 `SpdEditor.exe` 即可（自包含依赖，免安装） |
+| `MemorySpdEdit-Pro-Ver.001-Portable.zip` | **绿色版**：解压整个目录，双击 `MemorySpdEdit-Pro.exe` 即可（自包含依赖，免安装） |
 | `MemorySpdEdit-Pro-Ver.001-Full.zip` | **完整版**：单文件 `MemorySpdEdit-Pro.exe`，运行时依赖与内置资源均打进一个文件 |
 
 使用本机 SMBus 读取 SPD 时，请右键程序「以管理员身份运行」。
@@ -63,7 +63,15 @@ dotnet run --project SpdEditor.csproj
 dotnet publish SpdEditor.csproj -c Release -r win-x64 -o .\publish
 ```
 
-产物：`publish\SpdEditor.exe`（一个文件即可拷贝运行）。
+产物：`publish\MemorySpdEdit-Pro.exe`（一个文件即可拷贝运行）。
+
+框架依赖最小单文件（启动前检测 .NET 10；未安装则中文提示并引导下载 Desktop Runtime）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\launcher\publish-minimal.ps1
+```
+
+产物：`publish\minimal\MemorySpdEdit-Pro.exe`。
 
 说明：首次启动会把运行库解压到临时目录，可能稍慢；之后启动会快很多。已关闭单文件压缩与 R2R，并避免启动时解压 PawnIO 安装包，以缩短首次等待。
 
