@@ -32,7 +32,7 @@ public readonly record struct SmbusChannel(int BusIndex, byte Address)
 }
 
 /// <summary>
-/// 通过主板 SMBus（WinRing0）只读本机内存条 SPD。
+/// 通过主板 SMBus 只读本机内存条 SPD（PawnIO / WinRing0）。
 /// 烧录/解锁请仍使用串口读写器。
 /// </summary>
 public sealed class SmbusSpdService : IDisposable
@@ -43,6 +43,7 @@ public sealed class SmbusSpdService : IDisposable
     private bool _driverLoaded;
     private bool _disposed;
     private List<SmbusChannel> _channels = [];
+    private readonly Dictionary<(int Bus, byte Addr), SPDAccessor> _accessors = new();
 
     public bool IsConnected => _driverLoaded && SMBusManager.RegisteredSMBuses.Count > 0;
     public byte LastAddress { get; private set; } = 0x50;
@@ -86,42 +87,65 @@ public sealed class SmbusSpdService : IDisposable
             if (Directory.Exists(appDir))
                 Environment.CurrentDirectory = appDir;
 
-            if (!_driverLoaded)
+            // 依次尝试驱动：优先能扫到 SPD 通道的配置；PawnIO（签名）优先，再 WinRing0
+            var errors = new List<string>();
+            foreach (var impl in new[] { DriverImplementation.PawnIO, DriverImplementation.WinRing0 })
             {
-                if (!TryLoadHardwareDriver(out string driverDetail))
+                bool[] wmiModes = impl == DriverImplementation.WinRing0 ? [false, true] : [false];
+                foreach (bool useWmi in wmiModes)
                 {
-                    message =
-                        "硬件访问驱动加载失败（管理员已就绪，但驱动仍被系统拒绝）。\n\n" +
-                        $"详情：{driverDetail}\n\n" +
-                        "请依次排查：\n" +
-                        "1. Windows 安全中心 → 设备安全性 → 核心隔离 → 关闭「内存完整性」后重启\n" +
-                        "2. 暂时退出杀毒/安全软件对 .sys 驱动的拦截\n" +
-                        "3. 若开启了 Secure Boot，WinRing0 旧驱动常无法加载；可安装 PawnIO 后再试\n" +
-                        "   （https://github.com/namazso/PawnIO/releases）\n" +
-                        $"4. 确认程序目录可写：{appDir}";
-                    return false;
+                    if (!TryLoadDriver(impl, out string loadDetail))
+                    {
+                        errors.Add(loadDetail);
+                        break; // 该驱动无法加载，换下一个驱动
+                    }
+
+                    try
+                    {
+                        SMBusManager.UseWMI = useWmi;
+                        SMBusManager.DetectSMBuses();
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"{impl} Detect 异常: {ex.Message}");
+                        continue;
+                    }
+
+                    int busCount = SMBusManager.RegisteredSMBuses.Count;
+                    _channels = ScanChannels();
+                    _driverLoaded = true;
+
+                    if (_channels.Count > 0)
+                    {
+                        message =
+                            $"已连接 SMBus（驱动 {impl}" +
+                            (impl == DriverImplementation.WinRing0 ? $", UseWMI={useWmi}" : "") +
+                            $"，总线 {busCount}），发现 {_channels.Count} 条通道：" +
+                            string.Join(", ", _channels.Select(c => c.DisplayName));
+                        return true;
+                    }
+
+                    errors.Add(
+                        $"{impl}" +
+                        (impl == DriverImplementation.WinRing0 ? $"/WMI={useWmi}" : "") +
+                        $": 总线 {busCount}，SPD 通道 0");
                 }
-                _driverLoaded = true;
             }
 
-            SMBusManager.DetectSMBuses();
-            if (SMBusManager.RegisteredSMBuses.Count == 0)
-            {
-                _channels = [];
-                message = "驱动已加载，但未检测到可用 SMBus 控制器";
-                return false;
-            }
+            _channels = [];
+            _accessors.Clear();
+            SafeUnloadDriver();
+            _driverLoaded = false;
 
-            _channels = ScanChannels();
-            if (_channels.Count == 0)
-            {
-                message = $"已连接 SMBus（{SMBusManager.RegisteredSMBuses.Count} 条总线），但未发现 SPD（0x50–0x57）";
-                return true;
-            }
-
-            message = $"已连接 SMBus（驱动 {DriverManager.DriverImplementation}），发现 {_channels.Count} 条通道：" +
-                      string.Join(", ", _channels.Select(c => c.DisplayName));
-            return true;
+            message =
+                "未能通过 SMBus 发现内存 SPD（地址 0x50–0x57）。\n\n" +
+                $"探测摘要：{string.Join("；", errors)}\n\n" +
+                "常见原因：\n" +
+                "1. 笔记本「板载/焊接」LPDDR 往往不经标准 SMBus 暴露 SPD，软件无法直读\n" +
+                "2. 未以管理员运行，或 PawnIO / WinRing0 驱动被「内存完整性」拦截\n" +
+                "3. BIOS 关闭了 SPD 访问，或 IMC/PCH 总线被其它监控软件占用\n" +
+                "4. 可插拔 SODIMM/UDIMM 请确认内存已识别，并关闭 HWiNFO 等占用 SMBus 的工具后重试";
+            return false;
         }
         catch (Exception ex)
         {
@@ -137,43 +161,33 @@ public sealed class SmbusSpdService : IDisposable
         }
     }
 
-    /// <summary>优先 PawnIO（较新），失败再试 WinRing0。</summary>
-    private static bool TryLoadHardwareDriver(out string detail)
+    private static bool TryLoadDriver(DriverImplementation impl, out string detail)
     {
-        var errors = new List<string>();
+        try { DriverManager.UnloadDriver(); } catch { /* ignore */ }
 
-        foreach (var impl in new[] { DriverImplementation.PawnIO, DriverImplementation.WinRing0 })
+        try
         {
-            try
+            bool ok = DriverManager.LoadDriver(impl);
+            if (ok && DriverManager.Driver is { IsOpen: true })
             {
-                DriverManager.UnloadDriver();
-            }
-            catch { /* ignore */ }
-
-            try
-            {
-                bool ok = DriverManager.LoadDriver(impl);
-                if (ok && DriverManager.Driver is { IsOpen: true })
-                {
-                    detail = impl.ToString();
-                    return true;
-                }
-
-                string why = ok
-                    ? $"{impl} Load 返回成功但 IsOpen=false"
-                    : $"{impl} Load 返回失败";
-                errors.Add(why);
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"{impl} 异常: {ex.Message}");
+                detail = impl.ToString();
+                return true;
             }
 
-            try { DriverManager.UnloadDriver(); } catch { /* ignore */ }
+            detail = ok ? $"{impl} Load 成功但 IsOpen=false" : $"{impl} Load 返回失败";
+        }
+        catch (Exception ex)
+        {
+            detail = $"{impl} 异常: {ex.Message}";
         }
 
-        detail = string.Join("；", errors);
+        try { DriverManager.UnloadDriver(); } catch { /* ignore */ }
         return false;
+    }
+
+    private static void SafeUnloadDriver()
+    {
+        try { DriverManager.UnloadDriver(); } catch { /* ignore */ }
     }
 
     /// <summary>重新扫描插槽通道（驱动需已连接）。</summary>
@@ -187,6 +201,8 @@ public sealed class SmbusSpdService : IDisposable
     private List<SmbusChannel> ScanChannels()
     {
         var found = new List<SmbusChannel>();
+        _accessors.Clear();
+
         for (int bi = 0; bi < SMBusManager.RegisteredSMBuses.Count; bi++)
         {
             var bus = SMBusManager.RegisteredSMBuses[bi];
@@ -194,9 +210,11 @@ public sealed class SmbusSpdService : IDisposable
             {
                 try
                 {
-                    var detector = new SPDDetector(bus, addr);
-                    if (!detector.IsValid || detector.Accessor == null)
+                    if (!TryResolveAccessor(bus, addr, out var accessor))
                         continue;
+
+                    var key = (bi, addr);
+                    _accessors[key] = accessor;
                     found.Add(new SmbusChannel(bi, addr));
                 }
                 catch
@@ -205,7 +223,101 @@ public sealed class SmbusSpdService : IDisposable
                 }
             }
         }
+
         return found;
+    }
+
+    // JEDEC / RAMSPDToolkit 内部常量（原类型为 internal，这里本地镜像）
+    private const byte Ddr5Mr11VirtualPage = 0x0B;
+    private const byte Ddr5DeviceTypeMost = 0x00;
+    private const byte Ddr5DeviceTypeLeast = 0x01;
+    private const byte Ddr5MagicMost = 0x51;
+    private const byte Ddr5MagicLeast = 0x18;
+    private const byte Ddr4Spa0Address = 0x36;
+    private const byte Ddr4Page0Data = 0x00;
+    private const byte Ddr4MemoryTypeOffset = 0x02;
+
+    /// <summary>
+    /// 先走官方 SPDDetector；失败时按类型字节/探针强制创建 DDR4/DDR5/DDR3 访问器。
+    /// （DDR5 官方 IsAvailable 依赖温度传感器魔术字，部分模组会漏检。）
+    /// </summary>
+    private static bool TryResolveAccessor(SMBusInterface bus, byte addr, out SPDAccessor accessor)
+    {
+        accessor = null!;
+
+        try
+        {
+            var detector = new SPDDetector(bus, addr);
+            if (detector.IsValid && detector.Accessor != null)
+            {
+                accessor = detector.Accessor;
+                return true;
+            }
+        }
+        catch
+        {
+            // fall through
+        }
+
+        // --- 回退探针 ---
+        // DDR5：切页 0 后读 0x82（页内偏移|0x80）或魔术字 0x51/0x18
+        try
+        {
+            bus.i2c_smbus_write_byte_data(addr, Ddr5Mr11VirtualPage, 0);
+            Thread.Sleep(SPDConstants.SPD_IO_DELAY);
+
+            int typeAt82 = bus.i2c_smbus_read_byte_data(addr, 0x82);
+            int magicHi = bus.i2c_smbus_read_byte_data(addr, Ddr5DeviceTypeMost);
+            int magicLo = bus.i2c_smbus_read_byte_data(addr, Ddr5DeviceTypeLeast);
+            bool looksDdr5 =
+                typeAt82 == (int)SPDMemoryType.SPD_DDR5_SDRAM ||
+                typeAt82 == (int)SPDMemoryType.SPD_LPDDR5_SDRAM ||
+                (magicHi == Ddr5MagicMost && magicLo == Ddr5MagicLeast);
+
+            if (looksDdr5)
+            {
+                accessor = new DDR5Accessor(bus, addr);
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        // DDR4：SPA0 切页后读类型字节
+        try
+        {
+            bus.i2c_smbus_write_byte_data(Ddr4Spa0Address, Ddr4Page0Data, 0xFF);
+            Thread.Sleep(SPDConstants.SPD_IO_DELAY);
+            int type = bus.i2c_smbus_read_byte_data(addr, Ddr4MemoryTypeOffset);
+            if (type is (int)SPDMemoryType.SPD_DDR4_SDRAM
+                or (int)SPDMemoryType.SPD_DDR4E_SDRAM
+                or (int)SPDMemoryType.SPD_LPDDR4_SDRAM
+                or (int)SPDMemoryType.SPD_LPDDR4X_SDRAM)
+            {
+                accessor = new DDR4Accessor(bus, addr);
+                return true;
+            }
+
+            if (type is (int)SPDMemoryType.SPD_DDR3_SDRAM or (int)SPDMemoryType.SPD_LPDDR3_SDRAM)
+            {
+                accessor = new DDR3Accessor(bus, addr);
+                return true;
+            }
+
+            if (type is (int)SPDMemoryType.SPD_DDR5_SDRAM or (int)SPDMemoryType.SPD_LPDDR5_SDRAM)
+            {
+                accessor = new DDR5Accessor(bus, addr);
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return false;
     }
 
     /// <summary>按指定通道读取完整 SPD；channel 为空则读第一条发现的通道。</summary>
@@ -219,7 +331,7 @@ public sealed class SmbusSpdService : IDisposable
 
         if (_channels.Count == 0)
         {
-            detail = "SMBus 上未发现 SPD 设备（0x50–0x57）";
+            detail = "SMBus 上未发现 SPD 设备（0x50–0x57）。焊接板载内存通常无法通过 SMBus 读取。";
             return [];
         }
 
@@ -227,19 +339,29 @@ public sealed class SmbusSpdService : IDisposable
             ? c
             : _channels[0];
 
-        var bus = SMBusManager.RegisteredSMBuses[pick.BusIndex];
-        var detector = new SPDDetector(bus, pick.Address);
-        if (!detector.IsValid || detector.Accessor == null)
+        if (pick.BusIndex < 0 || pick.BusIndex >= SMBusManager.RegisteredSMBuses.Count)
         {
-            detail = $"通道 {pick.DisplayName} 无效或已移除";
+            detail = $"通道 {pick.DisplayName} 总线索引无效";
             return [];
+        }
+
+        var key = (pick.BusIndex, pick.Address);
+        if (!_accessors.TryGetValue(key, out var accessor) || accessor == null)
+        {
+            var bus = SMBusManager.RegisteredSMBuses[pick.BusIndex];
+            if (!TryResolveAccessor(bus, pick.Address, out accessor))
+            {
+                detail = $"通道 {pick.DisplayName} 无效或已移除";
+                return [];
+            }
+            _accessors[key] = accessor;
         }
 
         LastBusIndex = pick.BusIndex;
         LastAddress = pick.Address;
 
-        int size = SpdSizeFor(detector.SPDMemoryType);
-        var data = DumpBytes(detector.Accessor, size);
+        int size = SpdSizeFor(accessor.MemoryType());
+        var data = DumpBytes(accessor, size);
         detail = $"{pick.DisplayName}，读出 {data.Length} 字节（可选通道共 {_channels.Count} 条）";
         return data;
     }
@@ -253,15 +375,13 @@ public sealed class SmbusSpdService : IDisposable
     };
 
     /// <summary>
-    /// 导出完整 SPD。优先按页内 SMBus 块读（≤32 字节），比逐字节快约 30 倍；
+    /// 导出完整 SPD。优先按页内 SMBus 块读（≤32 字节）；
     /// 若块读疑似失败（短读/关键区全 0），再对该段逐字节补读。
     /// </summary>
     private static byte[] DumpBytes(SPDAccessor accessor, int size)
     {
         var data = new byte[size];
-        // DDR5 页 128；DDR4 页 256。用 128 对齐对两者都安全。
         const int pageSize = 128;
-        // I2C_SMBUS_BLOCK_MAX 通常为 32；超过会导致后半段被填 0
         const int maxBlock = 32;
 
         int offset = 0;
@@ -298,17 +418,12 @@ public sealed class SmbusSpdService : IDisposable
         if (part.Length > 0)
             Buffer.BlockCopy(part, 0, data, offset, part.Length);
 
-        // 短读或失败：该段改逐字节（仍会正确切页）
         for (int i = part.Length; i < len; i++)
             data[offset + i] = accessor.At((ushort)(offset + i));
     }
 
-    /// <summary>
-    /// 检测「前半块有数据、后半关键区全 0」的典型块读失败，并逐字节修补。
-    /// </summary>
     private static void RepairSuspectRanges(SPDAccessor accessor, byte[] data)
     {
-        // DDR5：tAAmin(30-31) 有值但 tRCD/tRP/tRAS(32-37) 全 0 → 修补 32..63
         if (data.Length > 37
             && (data[30] != 0 || data[31] != 0)
             && data[32] == 0 && data[33] == 0 && data[34] == 0 && data[35] == 0
@@ -318,7 +433,6 @@ public sealed class SmbusSpdService : IDisposable
                 data[i] = accessor.At(i);
         }
 
-        // DDR5：模组组织/总线宽(234-235) 全 0 且密度字节非 0 → 修补 224..255
         if (data.Length > 235
             && data[4] != 0
             && data[234] == 0 && data[235] == 0)
@@ -343,6 +457,7 @@ public sealed class SmbusSpdService : IDisposable
         {
             _driverLoaded = false;
             _channels = [];
+            _accessors.Clear();
         }
     }
 

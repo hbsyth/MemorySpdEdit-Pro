@@ -51,6 +51,8 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（Ver.
 
 若 PawnIO 仍不可用，会回退尝试 WinRing0（可能被「内存完整性」拦截）。部分笔记本 BIOS 可能限制 SMBus 探测。
 
+**说明**：可插拔 SODIMM/UDIMM 一般可读；笔记本焊接板载 LPDDR 往往不经标准 SMBus 暴露 SPD，此时软件无法直读（属硬件限制，非程序故障）。
+
 ## 运行
 
 ```powershell
