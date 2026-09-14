@@ -48,6 +48,8 @@
   <!-- 仅嵌入程序集：安装驱动时再释放，避免单文件首次启动解压 3MB+ 安装包 -->
   <ItemGroup>
     <EmbeddedResource Include="Assets\PawnIO_setup.exe" LogicalName="SpdEditor.Assets.PawnIO_setup.exe" />
+    <EmbeddedResource Include="Assets\alipay-qr.png" LogicalName="SpdEditor.Assets.alipay-qr.png" />
+    <EmbeddedResource Include="Assets\wechat-qr.png" LogicalName="SpdEditor.Assets.wechat-qr.png" />
   </ItemGroup>
 
   <ItemGroup>

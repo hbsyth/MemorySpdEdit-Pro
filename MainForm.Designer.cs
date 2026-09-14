@@ -23,16 +23,6 @@ partial class MainForm
         // 跟随系统主题（浅色/深色），勿写死灰色背景
         BackColor = SystemColors.Control;
 
-        // ===== 菜单：帮助 / 关于 =====
-        var menuStrip = new MenuStrip { Dock = DockStyle.Top };
-        var menuHelp = new ToolStripMenuItem("帮助(&H)");
-        var menuAbout = new ToolStripMenuItem("关于(&A)...");
-        menuAbout.Click += (_, _) => ShowAboutDialog();
-        menuHelp.DropDownItems.Add(menuAbout);
-        menuStrip.Items.Add(menuHelp);
-        MainMenuStrip = menuStrip;
-        Controls.Add(menuStrip);
-
         // ===== Top toolbar (3 rows) =====
         _toolbarPanel = new Panel { Dock = DockStyle.Top, Height = 130, Padding = new Padding(12, 10, 12, 10) };
 
@@ -45,6 +35,17 @@ partial class MainForm
             TextAlign = ContentAlignment.MiddleLeft,
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
         };
+
+        _lnkDonate = new LinkLabel
+        {
+            Text = "好用就打赏一下作者吧",
+            AutoSize = true,
+            TextAlign = ContentAlignment.MiddleRight,
+            LinkBehavior = LinkBehavior.HoverUnderline,
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+        };
+        _lnkDonate.LinkClicked += (_, _) => ShowAboutDialog();
 
         _lblPort = new Label
         {
@@ -96,7 +97,7 @@ partial class MainForm
         _btnLock.Click += (_, _) => LockSpd();
 
         _toolbarPanel.Controls.AddRange([
-            _lblOnline, _lblPort, _cmbPort, _cmbDeviceType, _btnOpenPort, _btnClosePort, _btnRefreshPort,
+            _lblOnline, _lnkDonate, _lblPort, _cmbPort, _cmbDeviceType, _btnOpenPort, _btnClosePort, _btnRefreshPort,
             _btnRead, _btnLoad, _btnBackup, _btnUnlock, _btnLock,
         ]);
 
@@ -323,19 +324,94 @@ partial class MainForm
         Controls.Add(mainSplit);
         Controls.Add(bottomPanel);
         Controls.Add(_toolbarPanel);
-        // menuStrip 已在前面 Add，保持置顶
     }
 
     private static void ShowAboutDialog()
     {
-        MessageBox.Show(
-            "我的邮箱：hbsyth@qq.com\n" +
-            "QQ：2247718170\n" +
-            "支付宝打赏：th1qth@163.com\n\n" +
-            "DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  Ver.001",
-            "关于",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+        const int pad = 16;
+        const int qrW = 200;
+        const int qrH = 300;
+        const int qrGap = 16;
+        const int btnH = 30;
+        int clientW = pad + qrW + qrGap + qrW + pad;
+        int infoH = 120;
+        int clientH = pad + infoH + 8 + qrH + 12 + btnH + pad;
+
+        using var dlg = new Form
+        {
+            Text = "关于",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(clientW, clientH),
+            Font = new Font("Microsoft YaHei UI", 9F),
+            ShowInTaskbar = false,
+        };
+
+        var lblInfo = new Label
+        {
+            AutoSize = false,
+            Location = new Point(pad, pad),
+            Size = new Size(clientW - pad * 2, infoH),
+            Text =
+                "我的邮箱：hbsyth@qq.com\n" +
+                "QQ：2247718170\n" +
+                "支付宝打赏：th1qth@163.com\n\n" +
+                "DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  Ver.001",
+        };
+
+        int qrY = pad + infoH + 8;
+        var picAlipay = new PictureBox
+        {
+            Location = new Point(pad, qrY),
+            Size = new Size(qrW, qrH),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+        };
+        var picWechat = new PictureBox
+        {
+            Location = new Point(pad + qrW + qrGap, qrY),
+            Size = new Size(qrW, qrH),
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+        };
+
+        Image? alipayImage = LoadEmbeddedImage("SpdEditor.Assets.alipay-qr.png");
+        Image? wechatImage = LoadEmbeddedImage("SpdEditor.Assets.wechat-qr.png");
+        picAlipay.Image = alipayImage;
+        picWechat.Image = wechatImage;
+
+        var btnOk = new Button
+        {
+            Text = "确定",
+            DialogResult = DialogResult.OK,
+            Size = new Size(88, btnH),
+            Location = new Point(clientW - pad - 88, clientH - pad - btnH),
+        };
+        dlg.AcceptButton = btnOk;
+        dlg.Controls.AddRange([lblInfo, picAlipay, picWechat, btnOk]);
+        dlg.ShowDialog();
+        alipayImage?.Dispose();
+        wechatImage?.Dispose();
+    }
+
+    private static Image? LoadEmbeddedImage(string resourceName)
+    {
+        try
+        {
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            using var stream = asm.GetManifestResourceStream(resourceName);
+            if (stream == null) return null;
+            using var temp = Image.FromStream(stream);
+            return new Bitmap(temp);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static Button MakeToolButton(string text, Color bg)

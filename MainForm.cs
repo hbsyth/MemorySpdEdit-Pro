@@ -25,6 +25,7 @@ public partial class MainForm : Form
     // Toolbar
     private Panel _toolbarPanel = null!;
     private Label _lblOnline = null!;
+    private LinkLabel _lnkDonate = null!;
     private Label _lblPort = null!;
     private ComboBox _cmbPort = null!;
     private ComboBox _cmbDeviceType = null!;
@@ -77,6 +78,7 @@ public partial class MainForm : Form
             RefreshPorts(selectFirstIfNeeded: true, logResult: false);
             LayoutToolbarButtons();
         };
+        _toolbarPanel.Resize += (_, _) => LayoutToolbarButtons();
     }
 
     private void LayoutToolbarButtons()
@@ -98,8 +100,11 @@ public partial class MainForm : Form
         int x3 = x2 + colWidth + gap;
         int x4 = x3 + colWidth + gap;
 
-        // 第 1 行：在线状态
+        // 第 1 行：在线状态（左）+ 打赏（右，靠近标题栏最小化按钮）
         _lblOnline.SetBounds(x0, y1, colWidth, btnHeight);
+        var donateSize = _lnkDonate.PreferredSize;
+        int donateX = Math.Max(x0 + colWidth + gap, _toolbarPanel.ClientSize.Width - donateSize.Width - 12);
+        _lnkDonate.SetBounds(donateX, y1 + (btnHeight - donateSize.Height) / 2, donateSize.Width, donateSize.Height);
 
         // 第 2 行：端口标签+COM + 类型 + 打开/关闭/刷新（标签+下拉合计宽度与下方按钮对齐）
         int comboH = Math.Clamp(_cmbPort.PreferredHeight, 24, btnHeight);

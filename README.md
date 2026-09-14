@@ -1,9 +1,17 @@
-# DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  **Ver.001**
+# MemorySpdEdit Pro · 内存SPD修改工具 Pro
 
-Windows 桌面版 SPD 读写与编辑工具，支持：
+Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（Ver.001），作者 SuperGun。
+
+支持：
 - [spdrw](https://github.com/spdrw/spdrw.github.io) 文本串口协议
 - [1a2m3/SPD-Reader-Writer](https://github.com/1a2m3/SPD-Reader-Writer) Arduino 二进制协议（自动探测）
-- **本机 SMBus 只读**（经 [RAMSPDToolkit](https://github.com/Blacktempel/RAMSPDToolkit) + WinRing0）
+- **本机 SMBus 只读**（经 [RAMSPDToolkit](https://github.com/Blacktempel/RAMSPDToolkit) + WinRing0 / PawnIO）
+
+欢迎 Star / Fork / Issue。
+
+## 程序截图
+
+![MemorySpdEdit Pro 主界面](docs/screenshot-main.png)
 
 ## 功能
 
@@ -69,7 +77,8 @@ Core/
   SpdEditorLogic.cs      - 字段写回与 CRC
   SpdUtils.cs            - CRC 与时序换算
   JedecManufacturers.cs  - JEP106 制造商表
-Assets/                  - 应用图标
+Assets/                  - 应用图标、收款码等资源
+docs/                    - 截图与说明资源
 MainForm.* / Program.cs
 ```
 

@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 publish_new/
+dist/
 
 # User-specific
 *.user
