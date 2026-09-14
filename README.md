@@ -9,6 +9,17 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（Ver.
 
 欢迎 Star / Fork / Issue。
 
+## 下载
+
+正式发布页：**[Releases · Ver.001](https://github.com/hbsyth/MemorySpdEdit-Pro/releases/tag/Ver.001)**
+
+| 包 | 说明 |
+|---|---|
+| `MemorySpdEdit-Pro-Ver.001-Setup.exe` | **安装版**：向导安装到 Program Files，可创建桌面快捷方式，支持卸载 |
+| `MemorySpdEdit-Pro-Ver.001-Portable.zip` | **绿色版**：解压即用，无需安装 |
+
+使用本机 SMBus 读取 SPD 时，请右键程序「以管理员身份运行」。
+
 ## 程序截图
 
 ![MemorySpdEdit Pro 主界面](docs/screenshot-main.png)

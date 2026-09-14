@@ -28,3 +28,7 @@ credentials.json
 
 # Local clones / experiments (not part of the app)
 third_party/
+
+# Installer build intermediates
+installer/SetupApp/bin/
+installer/SetupApp/obj/
