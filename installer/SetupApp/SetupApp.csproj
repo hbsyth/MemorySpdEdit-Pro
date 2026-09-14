@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\publish\green\SpdEditor.exe" LogicalName="SetupApp.Payload.SpdEditor.exe" Condition="Exists('..\publish\green\SpdEditor.exe')" />
+    <EmbeddedResource Include="..\..\publish\full\SpdEditor.exe" LogicalName="SetupApp.Payload.SpdEditor.exe" Condition="Exists('..\..\publish\full\SpdEditor.exe')" />
   </ItemGroup>
 
 </Project>
