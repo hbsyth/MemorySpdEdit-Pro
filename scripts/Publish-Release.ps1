@@ -107,7 +107,7 @@ $env:GIT_COMMITTER_EMAIL = $env:GIT_AUTHOR_EMAIL
 
 git add -- Version.props SpdEditor.csproj AppVersion.cs AppPaths.cs MainForm.cs MainForm.Designer.cs `
     Program.cs XmpInfoForm.cs README.md scripts/Publish-Release.ps1 launcher/publish-minimal.ps1
-git add -- Core/
+git add -- Core/ .cursor/rules/
 git add -u -- .
 $pending = git status --porcelain
 if ($pending) {
