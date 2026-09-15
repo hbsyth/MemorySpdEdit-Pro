@@ -1,0 +1,15 @@
+---
+description: 发布新版本必须是不包含依赖的单一文件（框架依赖 FDD）
+alwaysApply: true
+---
+
+# 发布约定（MemorySpdEdit-Pro）
+
+当用户说「发布」「发布新版本」「Release」或同类表述时：
+
+1. **产物必须是「单一文件、不包含依赖」**：`dotnet publish` 使用 `--self-contained false` + `PublishSingleFile=true`（win-x64）。
+   - **禁止**把 .NET 运行时打进包（禁止 `--self-contained true` / 自包含发布包）。
+   - 用户机器需已安装 .NET 10 Desktop Runtime x64。
+2. 走现有流水线：`scripts/Publish-Release.ps1`（内部调用 `launcher/publish-minimal.ps1`），按 `Version.props` 规则升版本 → 构建 → ZIP → 推送 `pro` 远程 → GitHub Release（仓库 `hbsyth/MemorySpdEdit-Pro`）。
+3. Release 说明与 README 下载指引须写明：**框架依赖单一文件 / 需 .NET 10 Desktop Runtime，包内不含运行时依赖**。
+4. 「不包含依赖」= 发布包不内嵌运行时；不要理解成自包含（无依赖安装）。

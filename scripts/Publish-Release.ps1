@@ -86,7 +86,7 @@ if ($NoBump) {
     Write-Host ("==> Version bumped to {0}" -f $label)
 }
 
-Write-Host "==> Build self-contained single-file"
+Write-Host "==> Build framework-dependent single-file (no runtime bundled)"
 & powershell -ExecutionPolicy Bypass -File (Join-Path $root "launcher\publish-minimal.ps1")
 if ($LASTEXITCODE -ne 0) { throw "publish-minimal failed" }
 
@@ -129,7 +129,8 @@ if (-not $SkipRelease) {
     $notes = @(
         ("## MemorySpdEdit Pro {0}" -f $label),
         "",
-        "Self-contained single-file package (win-x64). No .NET runtime install required.",
+        "Framework-dependent single-file package (requires .NET 10 Desktop Runtime x64).",
+        "The zip contains one exe only — runtime dependencies are NOT bundled.",
         "",
         ("Version rule: Ver + YY + . + ISO-week(WW) + . + serial(NNNN). This build: {0}." -f $label),
         "",

@@ -1,4 +1,4 @@
-# Publish self-contained single-file (one exe, no .NET runtime install required).
+# Publish framework-dependent single-file (one exe; does NOT bundle .NET runtime).
 # Output: publish\minimal\MemorySpdEdit-Pro-VerYY.WW.NNNN.exe
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -23,10 +23,9 @@ $outDir = Join-Path $root "publish\minimal"
 New-Item -ItemType Directory -Force -Path $stage, $outDir | Out-Null
 
 Write-Host ("==> Version {0}" -f $label)
-Write-Host "==> Publish self-contained single-file"
-dotnet publish SpdEditor.csproj -c Release -r win-x64 --self-contained true `
+Write-Host "==> Publish framework-dependent single-file (no runtime bundled)"
+dotnet publish SpdEditor.csproj -c Release -r win-x64 --self-contained false `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=false -p:PublishReadyToRun=false -p:PublishTrimmed=false `
   -o $stage
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -41,4 +40,4 @@ Copy-Item $payloadSrc $outPath -Force
 
 $size = (Get-Item $outPath).Length
 Write-Host ("OK: publish\minimal\{0} ({1:N2} MB)" -f $outExeName, ($size / 1MB))
-Write-Host "Self-contained win-x64 — no .NET runtime install required."
+Write-Host "Framework-dependent single-file — requires .NET 10 Desktop Runtime x64; runtime not bundled."

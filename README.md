@@ -23,7 +23,7 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当�
 
 正式发布页：**[Releases](https://github.com/hbsyth/MemorySpdEdit-Pro/releases)**（最新标签形如 `Ver26.38.0002`）
 
-推荐下载 **无依赖单一文件** ZIP：`MemorySpdEdit-Pro-VerYY.WW.NNNN.zip`（解压后运行 `MemorySpdEdit-Pro-VerYY.WW.NNNN.exe`，无需安装 .NET 运行时）。
+推荐下载 **不包含依赖的单一文件** ZIP：`MemorySpdEdit-Pro-VerYY.WW.NNNN.zip`（解压后运行 `MemorySpdEdit-Pro-VerYY.WW.NNNN.exe`，需已安装 .NET 10 Desktop Runtime x64；包内不含运行时）。
 
 使用本机 SMBus 读取 SPD 时，请右键程序「以管理员身份运行」。
 
@@ -71,7 +71,7 @@ dotnet publish SpdEditor.csproj -c Release -r win-x64 -o .\publish
 
 产物：`publish\MemorySpdEdit-Pro.exe`（一个文件即可拷贝运行）。
 
-无依赖单一文件（自包含 win-x64，文件名含版本号；无需安装 .NET 运行时）：
+框架依赖单一文件（文件名含版本号；**不包含** .NET 运行时依赖，需已安装 .NET 10 Desktop Runtime x64）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\launcher\publish-minimal.ps1
