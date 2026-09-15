@@ -3,6 +3,7 @@ namespace SpdEditor.Core;
 public enum SpdMemoryType
 {
     Unknown,
+    Ddr3,
     Ddr4,
     Ddr5,
 }
@@ -28,26 +29,17 @@ public sealed class SpdInfo
     public int DateOffset { get; init; }
 }
 
-/// <summary>DDR4/DDR5 SPD 解析：品牌、料号、SN、日期、频率/时序、容量。</summary>
+/// <summary>DDR3/DDR4/DDR5 SPD 解析：品牌、料号、SN、日期、频率/时序、容量。</summary>
 public static class SpdParser
 {
     public static SpdInfo Parse(byte[] data, int i2cAddress = 0x50)
     {
         _ = i2cAddress; // 保留参数以兼容调用方；地址由上层维护
-        if (data.Length < 256)
+        if (data.Length < 128)
             return new SpdInfo();
 
-        byte keyByte = data[2];
-        bool isDdr5 = keyByte == 0x12 || data.Length >= 1024;
-        bool isDdr4 = keyByte == 0x0C;
-
-        var type = isDdr5 ? SpdMemoryType.Ddr5 : isDdr4 ? SpdMemoryType.Ddr4 : SpdMemoryType.Unknown;
-
-        int moduleOff = isDdr5 ? 512 : 320;
-        int dateOff = isDdr5 ? 515 : 323;
-        int snOff = isDdr5 ? 517 : 325;
-        int partOff = isDdr5 ? 521 : 329;
-        int dieOff = isDdr5 ? 552 : 350;
+        var type = ResolveType(data);
+        var (moduleOff, dateOff, snOff, partOff, partSize, dieOff) = GetManufacturingLayout(type);
 
         if (data.Length <= moduleOff + 1)
             return new SpdInfo { MemoryType = type };
@@ -65,7 +57,6 @@ public static class SpdParser
         if (data.Length > snOff + 3)
             sn = $"{data[snOff]:X2}{data[snOff + 1]:X2}{data[snOff + 2]:X2}{data[snOff + 3]:X2}";
 
-        int partSize = isDdr5 ? 30 : 20;
         string part = ReadAscii(data, partOff, partSize);
         var (freq, timing) = ReadJedecSpeed(data, type);
         int capacityGb = ReadCapacityGb(data, type);
@@ -89,6 +80,35 @@ public static class SpdParser
             DateOffset = dateOff,
         };
     }
+
+    /// <summary>JEDEC Byte2 优先：0x0B=DDR3，0x0C=DDR4，0x12=DDR5；否则按长度推断。</summary>
+    public static SpdMemoryType ResolveType(byte[] data)
+    {
+        if (data.Length >= 3)
+        {
+            byte key = data[2];
+            if (key == 0x12) return SpdMemoryType.Ddr5;
+            if (key == 0x0C) return SpdMemoryType.Ddr4;
+            if (key == 0x0B) return SpdMemoryType.Ddr3;
+        }
+
+        if (data.Length >= 1024) return SpdMemoryType.Ddr5;
+        if (data.Length >= 512) return SpdMemoryType.Ddr4;
+        if (data.Length >= 256) return SpdMemoryType.Ddr3;
+        return SpdMemoryType.Unknown;
+    }
+
+    /// <summary>
+    /// 模组信息区偏移（JEDEC）：
+    /// DDR5：512+；DDR4：320+；DDR3：117+（料号 128 起 18 字节）。
+    /// </summary>
+    public static (int ModuleOff, int DateOff, int SnOff, int PartOff, int PartSize, int DieOff)
+        GetManufacturingLayout(SpdMemoryType type) => type switch
+    {
+        SpdMemoryType.Ddr5 => (512, 515, 517, 521, 30, 552),
+        SpdMemoryType.Ddr3 => (117, 120, 122, 128, 18, 148),
+        _ => (320, 323, 325, 329, 20, 350), // DDR4 / 未知按 DDR4 模组区
+    };
 
     /// <summary>
     /// 按 JEDEC SPD 计算模组容量（GB）。
@@ -322,6 +342,7 @@ public static class SpdParser
 
     public static string GetTypeLabel(SpdMemoryType type) => type switch
     {
+        SpdMemoryType.Ddr3 => "DDR3",
         SpdMemoryType.Ddr4 => "DDR4",
         SpdMemoryType.Ddr5 => "DDR5",
         _ => "未知",

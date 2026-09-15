@@ -70,6 +70,14 @@ public static class SpdProtocol
 
     public static int DetectDeviceType(byte[] data)
     {
+        if (data.Length >= 3)
+        {
+            byte key = data[2];
+            if (key == 0x12) return 5;
+            if (key == 0x0C) return 4;
+            if (key == 0x0B) return 3;
+        }
+
         if (data.Length >= 1024) return 5;
         if (data.Length >= 512) return 4;
         if (data.Length >= 256) return 3;

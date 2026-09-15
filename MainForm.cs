@@ -21,6 +21,7 @@ public partial class MainForm : Form
     private bool _readPopulateUi = true;
     private TaskCompletionSource<bool>? _readTcs;
     private int _rxBytesDuringRead;
+    private bool _suppressFieldCommit;
 
     // Toolbar
     private Panel _toolbarPanel = null!;
@@ -28,6 +29,7 @@ public partial class MainForm : Form
     private LinkLabel _lnkDonate = null!;
     private Label _lblPort = null!;
     private ComboBox _cmbPort = null!;
+    private Label _lblDeviceType = null!;
     private ComboBox _cmbDeviceType = null!;
     private Button _btnOpenPort = null!;
     private Button _btnClosePort = null!;
@@ -83,12 +85,13 @@ public partial class MainForm : Form
 
     private void LayoutToolbarButtons()
     {
-        // 三行固定布局：窗口缩放时尺寸与间距不变
+        // 三行固定布局：窗口缩放时尺寸与间距不变；标签+下拉合占一列，与下方按钮左右对齐
         const int padLeft = 12;
         const int btnHeight = 30;
         const int rowGap = 10;
-        const int gap = 10;
-        const int colWidth = 150;
+        const int gap = 12;
+        const int colWidth = 180;
+        const int labelComboGap = 2;
 
         int y1 = 10;
         int y2 = y1 + btnHeight + rowGap;
@@ -106,17 +109,23 @@ public partial class MainForm : Form
         int donateX = Math.Max(x0 + colWidth + gap, _toolbarPanel.ClientSize.Width - donateSize.Width - 12);
         _lnkDonate.SetBounds(donateX, y1 + (btnHeight - donateSize.Height) / 2, donateSize.Width, donateSize.Height);
 
-        // 第 2 行：端口标签+COM + 类型 + 打开/关闭/刷新（标签+下拉合计宽度与下方按钮对齐）
+        // 第 2 行：端口 / 内存类型（标签+下拉合计 = colWidth）+ 打开/关闭/刷新
         int comboH = Math.Clamp(_cmbPort.PreferredHeight, 24, btnHeight);
+        int comboY = y2 + (btnHeight - comboH) / 2;
+
         int portLabelW = TextRenderer.MeasureText(_lblPort.Text, _lblPort.Font).Width;
         _lblPort.SetBounds(x0, y2, portLabelW, btnHeight);
-        _cmbPort.SetBounds(x0 + portLabelW, y2 + (btnHeight - comboH) / 2, colWidth - portLabelW, comboH);
-        _cmbDeviceType.SetBounds(x1, y2 + (btnHeight - comboH) / 2, colWidth, comboH);
+        _cmbPort.SetBounds(x0 + portLabelW + labelComboGap, comboY, colWidth - portLabelW - labelComboGap, comboH);
+
+        int typeLabelW = TextRenderer.MeasureText(_lblDeviceType.Text, _lblDeviceType.Font).Width;
+        _lblDeviceType.SetBounds(x1, y2, typeLabelW, btnHeight);
+        _cmbDeviceType.SetBounds(x1 + typeLabelW + labelComboGap, comboY, colWidth - typeLabelW - labelComboGap, comboH);
+
         _btnOpenPort.SetBounds(x2, y2, colWidth, btnHeight);
         _btnClosePort.SetBounds(x3, y2, colWidth, btnHeight);
         _btnRefreshPort.SetBounds(x4, y2, colWidth, btnHeight);
 
-        // 第 3 行：读取/载入/保存/解锁/上锁
+        // 第 3 行：读取/载入/保存/解锁/上锁（与上行同列宽、同间距）
         _btnRead.SetBounds(x0, y3, colWidth, btnHeight);
         _btnLoad.SetBounds(x1, y3, colWidth, btnHeight);
         _btnBackup.SetBounds(x2, y3, colWidth, btnHeight);
@@ -224,19 +233,16 @@ public partial class MainForm : Form
         LayoutToolbarButtons();
     }
 
-    private void OpenPort()
+    private bool OpenPort()
     {
         SyncChannelFromPortSelection();
         if (_useSmbusChannel)
-        {
-            OpenSmbusChannel();
-            return;
-        }
+            return OpenSmbusChannel();
 
         if (_cmbPort.SelectedItem is not string port)
         {
             Log("[ERR] 请先选择 COM 端口", true);
-            return;
+            return false;
         }
 
         try
@@ -244,7 +250,7 @@ public partial class MainForm : Form
             if (_serial.IsOpen && _serial.PortName == port)
             {
                 Log($"[INFO] 端口 {port} 已打开");
-                return;
+                return true;
             }
 
             _smbus.Disconnect();
@@ -275,15 +281,18 @@ public partial class MainForm : Form
                 Log($"[OK] 已打开 {port} @ 115200 — 使用 spdrw 文本协议（类型 D{_deviceType}）");
                 Log($"[INFO] Arduino 探测未通过（{probeDetail}），将按 spdrw 协议通信");
             }
+
+            return _serial.IsOpen;
         }
         catch (Exception ex)
         {
             UpdateOnlineStatus();
             Log($"[ERR] 打开端口失败: {ex.Message}", true);
+            return false;
         }
     }
 
-    private void OpenSmbusChannel()
+    private bool OpenSmbusChannel()
     {
         try
         {
@@ -297,7 +306,7 @@ public partial class MainForm : Form
             {
                 Log("[INFO] SMBus 已连接");
                 UpdateOnlineStatus();
-                return;
+                return true;
             }
 
             // PawnIO 签名驱动：未安装则提示安装；已安装则直接打开
@@ -305,7 +314,7 @@ public partial class MainForm : Form
             {
                 MessageBox.Show(this, pawnMsg, "SMBus / PawnIO", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 UpdateOnlineStatus();
-                return;
+                return false;
             }
 
             Log("[INFO] 正在连接本机 SMBus（需管理员权限）...");
@@ -314,7 +323,7 @@ public partial class MainForm : Form
                 Log($"[ERR] {msg}", true);
                 MessageBox.Show(this, msg, "SMBus", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 UpdateOnlineStatus();
-                return;
+                return false;
             }
 
             Log($"[OK] {msg}");
@@ -327,12 +336,22 @@ public partial class MainForm : Form
                 SyncChannelFromPortSelection();
             }
             UpdateOnlineStatus();
+            return _smbus.IsConnected;
         }
         catch (Exception ex)
         {
             Log($"[ERR] SMBus 连接失败: {ex.Message}", true);
             UpdateOnlineStatus();
+            return false;
         }
+    }
+
+    private async Task OpenPortAndReadBinAsync()
+    {
+        if (!OpenPort())
+            return;
+
+        await ReadFromChipAsync();
     }
 
     private void ClosePort()
@@ -540,6 +559,11 @@ public partial class MainForm : Form
         {
             UpdateInfoPanel();
             PopulateFieldsFromSpd();
+            var memType = SpdEditorLogic.ResolveMemoryType(_spdData, _spdInfo.MemoryType);
+            bool crcOk = SpdEditorLogic.VerifyChecksums(_spdData, memType, out string crcReport);
+            Log(crcOk
+                ? $"[OK] 芯片 SPD CRC 符合规范 — {crcReport}"
+                : $"[WARN] 芯片 SPD CRC 异常 — {crcReport}（修改/保存/烧录时将自动完善）", !crcOk);
         }
     }
 
@@ -791,6 +815,22 @@ public partial class MainForm : Form
             UpdateInfoPanel();
             PopulateFieldsFromSpd();
             Log($"[OK] 已载入 {Path.GetFileName(dlg.FileName)} ({_spdData.Length} 字节)");
+            if (!SpdEditorLogic.FinalizeForFlash(ref _spdData, _spdInfo.MemoryType, out var loadCompliance))
+            {
+                Log($"[ERR] 载入 BIN 规范完善失败 — {loadCompliance.Summary}", true);
+            }
+            else
+            {
+                _originalData = (byte[])_spdData.Clone();
+                _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
+                PopulateFieldsFromSpd();
+                UpdateInfoPanel();
+                if (loadCompliance.LengthPadded || loadCompliance.PartNumberSanitized
+                    || loadCompliance.Ddr3CrcCoverageFixed || loadCompliance.CrcRepaired)
+                    Log($"[OK] 载入 BIN 已按 SPD 规范自动完善 — {loadCompliance.Summary}");
+                else
+                    Log($"[OK] 载入 BIN 符合 SPD 规范 — {loadCompliance.Summary}");
+            }
         }
         catch (Exception ex)
         {
@@ -946,11 +986,19 @@ public partial class MainForm : Form
 
     private void PopulateFieldsFromSpd()
     {
-        _cmbModuleBrand.SelectedIndex = JedecManufacturers.FindModuleIndexByName(_spdInfo.ModuleBrand);
-        _cmbDieBrand.SelectedIndex = JedecManufacturers.FindDieIndexByName(_spdInfo.DieBrand);
-        _txtDate.Text = _spdInfo.ProductionDate;
-        _txtSn.Text = _spdInfo.SerialNumber;
-        _txtModel.Text = _spdInfo.PartNumber;
+        _suppressFieldCommit = true;
+        try
+        {
+            _cmbModuleBrand.SelectedIndex = JedecManufacturers.FindModuleIndexByName(_spdInfo.ModuleBrand);
+            _cmbDieBrand.SelectedIndex = JedecManufacturers.FindDieIndexByName(_spdInfo.DieBrand);
+            _txtDate.Text = _spdInfo.ProductionDate;
+            _txtSn.Text = _spdInfo.SerialNumber;
+            _txtModel.Text = SpdEditorLogic.NormalizeVisiblePartNumber(_spdInfo.PartNumber);
+        }
+        finally
+        {
+            _suppressFieldCommit = false;
+        }
     }
 
     private static string FormatProductionDateLabel(string productionDate)
@@ -976,11 +1024,19 @@ public partial class MainForm : Form
         applyField(SpdParser.Parse(_spdData, _i2cAddress));
     }
 
-    private bool ApplyFieldsToSpd()
+    /// <param name="quiet">为 true 时仅在自动完善了字段/CRC 时写日志（用于手动编辑失焦）。</param>
+    private bool ApplyFieldsToSpd(bool quiet = false)
     {
         if (_spdData.Length == 0) return false;
+
+        // 先按 JEDEC 标准长度补齐，再解析偏移（避免短 BIN 写字段失败）
+        var memTypeHint = SpdEditorLogic.ResolveMemoryType(_spdData, _spdInfo.MemoryType);
+        _spdData = SpdEditorLogic.EnsureStandardLength(_spdData, memTypeHint, out bool lengthPadded);
         _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
-        if (!SpdEditorLogic.TryApplyProductionDate(_spdData, _spdInfo, _txtDate.Text, out string dateError))
+
+        string dateBefore = _txtDate.Text;
+        string dateFixed = SpdEditorLogic.AutoCompleteProductionDate(dateBefore, out bool dateChanged);
+        if (!SpdEditorLogic.TryApplyProductionDate(_spdData, _spdInfo, dateFixed, out string dateError))
         {
             MessageBox.Show(
                 $"生产日期不符合 SPD 规范:\n{dateError}\n\n格式: YYWW (BCD)\n示例: 2447 = 2024 年第 47 周",
@@ -990,17 +1046,76 @@ public partial class MainForm : Form
             return false;
         }
 
+        string snBefore = _txtSn.Text;
+        string modelBefore = _txtModel.Text;
+
         var modBrand = JedecManufacturers.GetModuleByIndex(_cmbModuleBrand.SelectedIndex);
         SpdEditorLogic.ApplyModuleBrand(_spdData, _spdInfo, modBrand);
         var dieBrand = JedecManufacturers.GetDieByIndex(_cmbDieBrand.SelectedIndex);
         SpdEditorLogic.ApplyDieBrand(_spdData, _spdInfo, dieBrand);
-        SpdEditorLogic.ApplySerialNumber(_spdData, _spdInfo, _txtSn.Text);
-        SpdEditorLogic.ApplyPartNumber(_spdData, _spdInfo, _txtModel.Text);
-        SpdEditorLogic.UpdateChecksums(_spdData, _spdInfo.MemoryType);
+        SpdEditorLogic.ApplySerialNumber(_spdData, _spdInfo, snBefore);
+        SpdEditorLogic.ApplyPartNumber(_spdData, _spdInfo, modelBefore);
+
+        // 手动输入不完善时：同步界面为实际写入的规范化值（日期钳制、SN 补齐、型号截断等）
+        string snFixed = SpdEditorLogic.NormalizeSerial(snBefore);
+        int modelMax = _spdInfo.PartNumberSize > 0 ? _spdInfo.PartNumberSize : SpdEditorLogic.PartNumberSpdMax;
+        string modelFixed = SpdEditorLogic.NormalizeVisiblePartNumber(modelBefore, modelMax);
+        bool fieldsAutoCompleted = dateChanged
+            || !string.Equals(snBefore.Trim(), snFixed, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(modelBefore.TrimEnd(), modelFixed, StringComparison.Ordinal);
+
+        // 刷写规范：长度 / 料号 ASCII / DDR3 CRC 覆盖位 / JEDEC CRC
+        if (!SpdEditorLogic.FinalizeForFlash(ref _spdData, _spdInfo.MemoryType, out var compliance))
+        {
+            Log($"[ERR] SPD 规范完善失败 — {compliance.Summary}", true);
+            return false;
+        }
+
+        bool autoFixed = fieldsAutoCompleted || lengthPadded || compliance.LengthPadded
+            || compliance.PartNumberSanitized || compliance.Ddr3CrcCoverageFixed || compliance.CrcRepaired;
+
+        if (!quiet || autoFixed)
+        {
+            if (fieldsAutoCompleted)
+                Log($"[OK] 已自动完善手动输入（日期/SN/型号）— 日期:{dateFixed} SN:{snFixed} 型号:{modelFixed}");
+            if (lengthPadded || compliance.LengthPadded || compliance.PartNumberSanitized
+                || compliance.Ddr3CrcCoverageFixed || compliance.CrcRepaired)
+                Log($"[OK] 已按 SPD 刷写规范完善 BIN — {compliance.Summary}");
+            else
+                Log($"[OK] SPD 规范校验通过 — {compliance.Summary}");
+        }
+
         _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
-        _txtDate.Text = _spdInfo.ProductionDate;
+        modelMax = _spdInfo.PartNumberSize > 0 ? _spdInfo.PartNumberSize : SpdEditorLogic.PartNumberSpdMax;
+
+        // 刷写通道设备类型与 SPD 类型对齐，避免差分写入截断 CRC/模组区
+        int detected = SpdProtocol.DetectDeviceType(_spdData);
+        if (detected != _deviceType)
+        {
+            _deviceType = detected;
+            SelectDeviceTypeInUi(_deviceType);
+        }
+
+        _suppressFieldCommit = true;
+        try
+        {
+            _txtDate.Text = _spdInfo.ProductionDate;
+            _txtSn.Text = _spdInfo.SerialNumber;
+            _txtModel.Text = SpdEditorLogic.NormalizeVisiblePartNumber(_spdInfo.PartNumber, modelMax);
+        }
+        finally
+        {
+            _suppressFieldCommit = false;
+        }
         UpdateInfoPanel();
         return true;
+    }
+
+    /// <summary>有 SPD 数据时把界面字段写回，并自动完善字段格式与 JEDEC CRC。</summary>
+    private void CommitEditableFieldsIfLoaded()
+    {
+        if (_suppressFieldCommit || _spdData.Length == 0) return;
+        ApplyFieldsToSpd(quiet: true);
     }
 
     private void UpdateInfoPanel()
@@ -1016,7 +1131,16 @@ public partial class MainForm : Form
             $"品牌: {_spdInfo.ModuleBrand}  |  {_spdInfo.FrequencyLabel}  |  {_spdInfo.TimingLabel}{Environment.NewLine}" +
             $"颗粒: {_spdInfo.DieBrand}  |  内存容量 {capacityText}{Environment.NewLine}" +
             $"型号: {_spdInfo.PartNumber}{Environment.NewLine}" +
-            $"SN: {_spdInfo.SerialNumber}  |  日期: {FormatProductionDateLabel(_spdInfo.ProductionDate)}";
+            $"SN: {_spdInfo.SerialNumber}  |  日期: {FormatProductionDateLabel(_spdInfo.ProductionDate)}{Environment.NewLine}" +
+            BuildCrcStatusLine();
+    }
+
+    private string BuildCrcStatusLine()
+    {
+        if (_spdData.Length == 0) return "CRC: -";
+        var memType = SpdEditorLogic.ResolveMemoryType(_spdData, _spdInfo.MemoryType);
+        bool ok = SpdEditorLogic.VerifyChecksums(_spdData, memType, out string report);
+        return ok ? $"CRC: 通过 ({SpdParser.GetTypeLabel(memType)})" : $"CRC: 异常 — {report}";
     }
 
     private void Log(string message, bool isError = false)
@@ -1037,8 +1161,22 @@ public partial class MainForm : Form
     private string RandomModelForSelectedBrand()
     {
         var brand = JedecManufacturers.GetModuleByIndex(_cmbModuleBrand.SelectedIndex);
-        int size = _spdInfo.PartNumberSize > 0 ? _spdInfo.PartNumberSize : 20;
-        return SpdEditorLogic.RandomPartNumber(brand.Name, size);
+        var memType = ResolveMemoryTypeForModel();
+        int capacityGb = _spdInfo.CapacityGb;
+        return SpdEditorLogic.RandomPartNumber(brand.Name, memType, capacityGb);
+    }
+
+    private SpdMemoryType ResolveMemoryTypeForModel()
+    {
+        if (_spdInfo.MemoryType != SpdMemoryType.Unknown)
+            return _spdInfo.MemoryType;
+        return _deviceType switch
+        {
+            5 => SpdMemoryType.Ddr5,
+            4 => SpdMemoryType.Ddr4,
+            3 => SpdMemoryType.Ddr3,
+            _ => SpdMemoryType.Unknown,
+        };
     }
 
     private void QuickRandom()
@@ -1049,21 +1187,29 @@ public partial class MainForm : Form
             return;
         }
 
-        // 随机品牌 / 颗粒厂家（跳过「未知」项）
-        int brandCount = JedecManufacturers.ModuleBrands.Length;
-        if (brandCount > 1)
-            _cmbModuleBrand.SelectedIndex = Random.Shared.Next(1, brandCount);
+        _suppressFieldCommit = true;
+        try
+        {
+            // 随机品牌 / 颗粒厂家（跳过「未知」项）
+            int brandCount = JedecManufacturers.ModuleBrands.Length;
+            if (brandCount > 1)
+                _cmbModuleBrand.SelectedIndex = Random.Shared.Next(1, brandCount);
 
-        int dieCount = JedecManufacturers.DieManufacturers.Length;
-        if (dieCount > 1)
-            _cmbDieBrand.SelectedIndex = Random.Shared.Next(1, dieCount);
+            int dieCount = JedecManufacturers.DieManufacturers.Length;
+            if (dieCount > 1)
+                _cmbDieBrand.SelectedIndex = Random.Shared.Next(1, dieCount);
 
-        _txtDate.Text = SpdEditorLogic.RandomProductionDate();
-        _txtSn.Text = SpdEditorLogic.RandomSerial();
-        _txtModel.Text = RandomModelForSelectedBrand();
+            _txtDate.Text = SpdEditorLogic.RandomProductionDate();
+            _txtSn.Text = SpdEditorLogic.RandomSerial();
+            _txtModel.Text = RandomModelForSelectedBrand();
+        }
+        finally
+        {
+            _suppressFieldCommit = false;
+        }
 
         if (!ApplyFieldsToSpd()) return;
-        Log("[OK] 已一键随机：品牌 / 颗粒厂家 / 生产日期 / 型号 / 序列号");
+        Log("[OK] 已一键随机：品牌 / 颗粒厂家 / 生产日期 / 型号 / 序列号（CRC 已按 JEDEC 完善）");
     }
 
     private void RestoreInitial()

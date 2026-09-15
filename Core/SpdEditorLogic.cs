@@ -43,24 +43,62 @@ public static class SpdEditorLogic
     private static bool IsUnknownManufacturer(ManufacturerEntry brand) =>
         (brand.Continuation & 0x7F) == 0 && (brand.Code & 0x7F) == 0;
 
+    /// <summary>规范化序列号为 8 位大写十六进制（不足补 0，超出取末 8 位）。</summary>
+    public static string NormalizeSerial(string? snHex)
+    {
+        string s = new string((snHex ?? "").Where(c => Uri.IsHexDigit(c)).ToArray()).ToUpperInvariant();
+        if (s.Length > 8) s = s[^8..];
+        return s.PadLeft(8, '0');
+    }
+
     /// <summary>写入 4 字节序列号（8 位十六进制）。</summary>
     public static void ApplySerialNumber(byte[] data, SpdInfo info, string snHex)
     {
-        snHex = new string(snHex.Where(c => Uri.IsHexDigit(c)).ToArray()).PadLeft(8, '0');
-        if (snHex.Length > 8) snHex = snHex[^8..];
+        snHex = NormalizeSerial(snHex);
         EnsureSize(data, info.SnOffset + 4);
         for (int i = 0; i < 4; i++)
             data[info.SnOffset + i] = Convert.ToByte(snHex.Substring(i * 2, 2), 16);
     }
 
-    /// <summary>写入产品型号（ASCII，不足补空格）。</summary>
+    /// <summary>SPD 产品型号字段最大长度（DDR5）；界面不另限 12 位。</summary>
+    public const int PartNumberSpdMax = 30;
+
+    /// <summary>写入产品型号；超出 SPD 规定长度则截断，不足补空格。</summary>
     public static void ApplyPartNumber(byte[] data, SpdInfo info, string partNumber)
     {
         int size = info.PartNumberSize > 0 ? info.PartNumberSize : 20;
         EnsureSize(data, info.PartOffset + size);
+        string visible = NormalizeVisiblePartNumber(partNumber, size);
         for (int i = 0; i < size; i++)
-            data[info.PartOffset + i] = i < partNumber.Length ? (byte)partNumber[i] : (byte)0x20;
+            data[info.PartOffset + i] = i < visible.Length ? (byte)visible[i] : (byte)0x20;
     }
+
+    /// <summary>规范化界面型号：可打印 ASCII、去尾部空格；可选截断到 maxLen（SPD 字段长度）。</summary>
+    public static string NormalizeVisiblePartNumber(string? partNumber, int maxLen = PartNumberSpdMax)
+    {
+        string raw = partNumber ?? "";
+        var chars = new char[raw.Length];
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char c = raw[i];
+            chars[i] = c is >= (char)0x20 and <= (char)0x7E ? c : ' ';
+        }
+
+        string s = new string(chars).TrimEnd();
+        if (maxLen > 0 && s.Length > maxLen)
+            s = s[..maxLen];
+        return s;
+    }
+
+    /// <summary>按内存类型返回 D3 / D4 / D5。</summary>
+    public static string MemoryTypeTag(SpdMemoryType memoryType) => memoryType switch
+    {
+        SpdMemoryType.Ddr5 => "D5",
+        SpdMemoryType.Ddr4 => "D4",
+        SpdMemoryType.Ddr3 => "D3",
+        _ => "D3",
+    };
+
 
     public static bool IsValidBcdByte(byte value) =>
         (value & 0x0F) <= 9 && ((value >> 4) & 0x0F) <= 9;
@@ -150,14 +188,57 @@ public static class SpdEditorLogic
 
     public static string RandomProductionDate()
     {
-        var rng = Random.Shared;
         var (currentYear, currentWeek) = GetCurrentIsoYearWeek();
-        int year = rng.Next(ProductionDateMinYear, currentYear + 1);
+        int maxWeek = Math.Max(1, currentWeek);
+        int week = Random.Shared.Next(1, maxWeek + 1);
+        return FormatProductionDate(IntToBcd(currentYear % 100), IntToBcd(week));
+    }
+
+    /// <summary>
+    /// 将手动输入的生产日期自动完善为合法 YYWW（BCD）：补齐、钳制年份/周数，必要时回落到当前周。
+    /// </summary>
+    public static string AutoCompleteProductionDate(string? input, out bool changed)
+    {
+        string original = (input ?? "").Trim();
+        if (TryParseProductionDate(original, out byte yOk, out byte wOk, out _))
+        {
+            string ok = FormatProductionDate(yOk, wOk);
+            changed = !string.Equals(original, ok, StringComparison.OrdinalIgnoreCase);
+            return ok;
+        }
+
+        string digits = new string((original).Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+        {
+            changed = original.Length > 0;
+            return "0000";
+        }
+
+        digits = digits.PadLeft(4, '0');
+        if (digits.Length > 4) digits = digits[^4..];
+
+        int yy = int.Parse(digits[..2]);
+        int ww = int.Parse(digits[2..]);
+        if (yy == 0 && ww == 0)
+        {
+            changed = !string.Equals(original, "0000", StringComparison.OrdinalIgnoreCase);
+            return "0000";
+        }
+
+        var (currentYear, currentWeek) = GetCurrentIsoYearWeek();
+        int year = 2000 + yy;
+        if (year < ProductionDateMinYear) year = ProductionDateMinYear;
+        if (year > currentYear) year = currentYear;
+
         int maxWeek = year == currentYear
             ? Math.Max(1, currentWeek)
             : GetMaxProductionWeek(year);
-        int week = rng.Next(1, maxWeek + 1);
-        return FormatProductionDate(IntToBcd(year % 100), IntToBcd(week));
+        if (ww < 1) ww = 1;
+        if (ww > maxWeek) ww = maxWeek;
+
+        string fixedDate = FormatProductionDate(IntToBcd(year % 100), IntToBcd(ww));
+        changed = !string.Equals(original, fixedDate, StringComparison.OrdinalIgnoreCase);
+        return fixedDate;
     }
 
     public static bool TryApplyProductionDate(byte[] data, SpdInfo info, string dateHex, out string error)
@@ -171,20 +252,218 @@ public static class SpdEditorLogic
         return true;
     }
 
-    /// <summary>按内存类型重算 SPD CRC（DDR4 三段 / DDR5 一段）。</summary>
+    /// <summary>
+    /// 根据 SPD 字节/长度解析内存类型（JEDEC Byte2：0x0B=DDR3，0x0C=DDR4，0x12=DDR5）。
+    /// </summary>
+    public static SpdMemoryType ResolveMemoryType(byte[] data, SpdMemoryType hinted = SpdMemoryType.Unknown)
+    {
+        if (hinted is SpdMemoryType.Ddr3 or SpdMemoryType.Ddr4 or SpdMemoryType.Ddr5)
+            return hinted;
+
+        return SpdParser.ResolveType(data);
+    }
+
+    /// <summary>JEDEC 标准 SPD 映像长度：DDR3=256，DDR4=512，DDR5=1024。</summary>
+    public static int GetStandardLength(SpdMemoryType memoryType) => memoryType switch
+    {
+        SpdMemoryType.Ddr5 => 1024,
+        SpdMemoryType.Ddr4 => 512,
+        SpdMemoryType.Ddr3 => 256,
+        _ => 0,
+    };
+
+    /// <summary>不足标准长度时以 0x00 补齐（刷写前自动完善）。</summary>
+    public static byte[] EnsureStandardLength(byte[] data, SpdMemoryType memoryType, out bool padded)
+    {
+        int need = GetStandardLength(memoryType);
+        if (need <= 0 || data.Length >= need)
+        {
+            padded = false;
+            return data;
+        }
+
+        var resized = new byte[need];
+        Buffer.BlockCopy(data, 0, resized, 0, data.Length);
+        padded = true;
+        return resized;
+    }
+
+    /// <summary>将料号区非法字节规范为空格（0x20–0x7E）。</summary>
+    public static bool SanitizePartNumberRegion(byte[] data, SpdInfo info)
+    {
+        if (info.PartOffset < 0 || info.PartNumberSize <= 0) return false;
+        if (data.Length < info.PartOffset + info.PartNumberSize) return false;
+
+        bool changed = false;
+        for (int i = 0; i < info.PartNumberSize; i++)
+        {
+            byte b = data[info.PartOffset + i];
+            if (b is < 0x20 or > 0x7E)
+            {
+                data[info.PartOffset + i] = 0x20;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// DDR3：编辑模组信息区（117–125）时须置 Byte0.bit7，CRC 覆盖 0–125。
+    /// </summary>
+    public static bool EnsureDdr3CrcCoverageBit(byte[] data, SpdMemoryType memoryType)
+    {
+        if (memoryType != SpdMemoryType.Ddr3 || data.Length < 128)
+            return false;
+        if ((data[0] & 0x80) != 0)
+            return false;
+        data[0] |= 0x80;
+        return true;
+    }
+
+    /// <summary>
+    /// 按 JEDEC 规范重算 SPD CRC-16（XMODEM / poly 0x1021，小端存放）。
+    /// DDR4：字节 0–125→126/127；128–253→254/255；320–381→382/383。
+    /// DDR5：字节 0–509→510/511（模组信息区 512+ 不在此 CRC 覆盖范围内）。
+    /// DDR3：Byte0.bit7=1 时 0–125→126/127；否则 0–116→126/127。
+    /// </summary>
     public static void UpdateChecksums(byte[] data, SpdMemoryType memoryType)
     {
+        memoryType = ResolveMemoryType(data, memoryType);
         switch (memoryType)
         {
+            case SpdMemoryType.Ddr5 when data.Length >= 512:
+                SpdUtils.SetWord(data, 510, SpdUtils.Crc16Xmodem(data.AsSpan(0, 510)));
+                break;
             case SpdMemoryType.Ddr4 when data.Length >= 384:
-                SpdUtils.SetWord(data, 126, SpdUtils.Crc16Xmodem(data.AsSpan(0, 0x7E)));
-                SpdUtils.SetWord(data, 254, SpdUtils.Crc16Xmodem(data.AsSpan(0x80, 0x7E)));
+                SpdUtils.SetWord(data, 126, SpdUtils.Crc16Xmodem(data.AsSpan(0, 126)));
+                SpdUtils.SetWord(data, 254, SpdUtils.Crc16Xmodem(data.AsSpan(128, 126)));
                 SpdUtils.SetWord(data, 382, SpdUtils.Crc16Xmodem(data.AsSpan(320, 62)));
                 break;
-            case SpdMemoryType.Ddr5 when data.Length >= 512:
-                SpdUtils.SetWord(data, 510, SpdUtils.Crc16Xmodem(data.AsSpan(0, 0x1FE)));
+            case SpdMemoryType.Ddr3 when data.Length >= 128:
+            {
+                int crcLen = (data[0] & 0x80) != 0 ? 126 : 117;
+                SpdUtils.SetWord(data, 126, SpdUtils.Crc16Xmodem(data.AsSpan(0, crcLen)));
+                break;
+            }
+            default:
+                if (data.Length >= 128)
+                    SpdUtils.SetWord(data, 126, SpdUtils.Crc16Xmodem(data.AsSpan(0, 126)));
                 break;
         }
+    }
+
+    /// <summary>
+    /// 确保 BIN 符合 JEDEC CRC：若当前校验失败则按规范重算并写回校验字（自动完善）。
+    /// <paramref name="repaired"/> 为 true 表示写入前 CRC 异常、已自动修正。
+    /// </summary>
+    public static bool EnsureChecksums(byte[] data, SpdMemoryType memoryType, out bool repaired, out string report)
+    {
+        memoryType = ResolveMemoryType(data, memoryType);
+        bool beforeOk = VerifyChecksums(data, memoryType, out _);
+        UpdateChecksums(data, memoryType);
+        bool afterOk = VerifyChecksums(data, memoryType, out report);
+        repaired = !beforeOk && afterOk;
+        return afterOk;
+    }
+
+    /// <summary>校验当前 BIN 是否符合 JEDEC CRC；返回是否全部通过及明细。</summary>
+    public static bool VerifyChecksums(byte[] data, SpdMemoryType memoryType, out string report)
+    {
+        memoryType = ResolveMemoryType(data, memoryType);
+        var parts = new List<string>();
+        bool allOk = true;
+
+        void Check(string name, int crcOffset, int start, int length)
+        {
+            if (data.Length < crcOffset + 2 || data.Length < start + length)
+            {
+                parts.Add($"{name}: 数据长度不足");
+                allOk = false;
+                return;
+            }
+
+            ushort expect = SpdUtils.Crc16Xmodem(data.AsSpan(start, length));
+            ushort actual = (ushort)SpdUtils.GetWord(data, crcOffset);
+            if (expect == actual)
+            {
+                parts.Add($"{name}: OK ({actual:X4})");
+            }
+            else
+            {
+                parts.Add($"{name}: FAIL 期望 {expect:X4} 实际 {actual:X4}");
+                allOk = false;
+            }
+        }
+
+        switch (memoryType)
+        {
+            case SpdMemoryType.Ddr5:
+                Check("DDR5 CRC(0-509)", 510, 0, 510);
+                parts.Add("说明: 模组品牌/SN/型号等位于 512+，不在该 CRC 覆盖范围内");
+                break;
+            case SpdMemoryType.Ddr4:
+                Check("DDR4 CRC#0(0-125)", 126, 0, 126);
+                Check("DDR4 CRC#1(128-253)", 254, 128, 126);
+                Check("DDR4 CRC#2(320-381)", 382, 320, 62);
+                break;
+            case SpdMemoryType.Ddr3:
+            {
+                int crcLen = data.Length > 0 && (data[0] & 0x80) != 0 ? 126 : 117;
+                Check($"DDR3 CRC(0-{crcLen - 1})", 126, 0, crcLen);
+                break;
+            }
+            default:
+                Check("Legacy CRC(0-125)", 126, 0, 126);
+                break;
+        }
+
+        report = string.Join("；", parts);
+        return allOk;
+    }
+
+    /// <summary>刷写/保存前完善结果。</summary>
+    public sealed class SpdComplianceReport
+    {
+        public bool Ok { get; init; }
+        public SpdMemoryType MemoryType { get; init; }
+        public bool LengthPadded { get; init; }
+        public bool PartNumberSanitized { get; init; }
+        public bool Ddr3CrcCoverageFixed { get; init; }
+        public bool CrcRepaired { get; init; }
+        public string Summary { get; init; } = "";
+    }
+
+    /// <summary>
+    /// 刷写/保存前统一完善：标准长度补齐、料号 ASCII 净化、DDR3 CRC 覆盖位、JEDEC CRC。
+    /// </summary>
+    public static bool FinalizeForFlash(ref byte[] data, SpdMemoryType hinted, out SpdComplianceReport report)
+    {
+        var type = ResolveMemoryType(data, hinted);
+        data = EnsureStandardLength(data, type, out bool lengthPadded);
+
+        var info = SpdParser.Parse(data);
+        bool pnSanitized = SanitizePartNumberRegion(data, info);
+        bool ddr3Fixed = EnsureDdr3CrcCoverageBit(data, type);
+        bool crcOk = EnsureChecksums(data, type, out bool crcRepaired, out string crcReport);
+
+        var notes = new List<string>();
+        if (lengthPadded) notes.Add($"已补齐至 {GetStandardLength(type)} 字节");
+        if (pnSanitized) notes.Add("料号区非法字节已规范为空格");
+        if (ddr3Fixed) notes.Add("已置 DDR3 Byte0.bit7（CRC 覆盖模组信息区）");
+        if (crcRepaired) notes.Add("CRC 已重算");
+        notes.Add(crcReport);
+
+        report = new SpdComplianceReport
+        {
+            Ok = crcOk,
+            MemoryType = type,
+            LengthPadded = lengthPadded,
+            PartNumberSanitized = pnSanitized,
+            Ddr3CrcCoverageFixed = ddr3Fixed,
+            CrcRepaired = crcRepaired,
+            Summary = string.Join("；", notes),
+        };
+        return crcOk;
     }
 
     public static string RandomSerial()
@@ -193,7 +472,46 @@ public static class SpdEditorLogic
         return $"{rng.Next(0, 256):X2}{rng.Next(0, 256):X2}{rng.Next(0, 256):X2}{rng.Next(0, 256):X2}";
     }
 
-    /// <summary>从品牌显示名提取字母数字前缀（用于随机料号）。</summary>
+    /// <summary>
+    /// 随机产品型号：厂家英文(首空格前、首字母大写其余小写) + D3/D4/D5 + 容量两位(补0) + 4位随机大写字母数字。
+    /// 写入 SPD 时由 <see cref="ApplyPartNumber"/> 按类型规定长度截断并补空格。
+    /// </summary>
+    public static string RandomPartNumber(string manufacturerName, SpdMemoryType memoryType, int capacityGb)
+    {
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var rng = Random.Shared;
+
+        string typeTag = MemoryTypeTag(memoryType);
+        string capacity = Math.Clamp(capacityGb, 0, 99).ToString("D2");
+        string english = JedecManufacturers.GetEnglishName(manufacturerName);
+        string brand = FormatManufacturerBrand(english);
+
+        var suffix = new char[4];
+        for (int i = 0; i < 4; i++)
+            suffix[i] = chars[rng.Next(chars.Length)];
+
+        return brand + typeTag + capacity + new string(suffix);
+    }
+
+    /// <summary>厂家英文用于型号：取首空格前片段，仅保留字母数字，首字母大写、其余小写。</summary>
+    public static string FormatManufacturerBrand(string englishName)
+    {
+        string name = (englishName ?? "").Trim();
+        int space = name.IndexOf(' ');
+        if (space >= 0)
+            name = name[..space];
+
+        string letters = new string(name.Where(char.IsLetterOrDigit).ToArray());
+        if (letters.Length == 0 || letters.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            return "Oem";
+
+        if (letters.Length == 1)
+            return letters.ToUpperInvariant();
+
+        return char.ToUpperInvariant(letters[0]) + letters[1..].ToLowerInvariant();
+    }
+
+    /// <summary>从品牌显示名提取字母数字前缀（用于其它场景）。</summary>
     public static string ExtractManufacturerPrefix(string brandDisplayName)
     {
         int start = brandDisplayName.IndexOf('(');
@@ -205,32 +523,6 @@ public static class SpdEditorLogic
         return new string(prefix.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
     }
 
-    public static string RandomPartNumber(string manufacturerName, int maxLength = 20)
-    {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var rng = Random.Shared;
-        maxLength = Math.Clamp(maxLength, 1, 30);
-
-        string prefix = ExtractManufacturerPrefix(manufacturerName);
-        if (prefix.Length >= maxLength)
-            return prefix[..maxLength];
-
-        int remaining = maxLength - prefix.Length;
-        if (remaining == 0)
-            return prefix;
-
-        if (prefix.Length == 0)
-        {
-            return new string(Enumerable.Range(0, maxLength)
-                .Select(_ => chars[rng.Next(chars.Length)])
-                .ToArray());
-        }
-
-        var suffix = new char[remaining];
-        for (int i = 0; i < remaining; i++)
-            suffix[i] = chars[rng.Next(chars.Length)];
-        return prefix + new string(suffix);
-    }
 
     /// <summary>批量模式下序列号按步长递增（无符号环绕）。</summary>
     public static string IncrementSerial(string snHex, int step)

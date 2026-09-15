@@ -1,4 +1,6 @@
 #nullable enable
+using SpdEditor.Core;
+
 namespace SpdEditor;
 
 partial class MainForm
@@ -60,6 +62,13 @@ partial class MainForm
             Width = 90,
         };
 
+        _lblDeviceType = new Label
+        {
+            Text = "内存类型：",
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+
         _cmbDeviceType = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
@@ -82,7 +91,7 @@ partial class MainForm
         _btnUnlock = MakeToolButton("SPD解锁", Color.FromArgb(255, 140, 0));
         _btnLock = MakeToolButton("SPD上锁", Color.FromArgb(220, 20, 60));
 
-        _btnOpenPort.Click += (_, _) => OpenPort();
+        _btnOpenPort.Click += async (_, _) => await OpenPortAndReadBinAsync();
         _btnClosePort.Click += (_, _) => ClosePort();
         _btnRefreshPort.Click += (_, _) => RefreshPorts(selectFirstIfNeeded: false, logResult: true);
         _cmbPort.SelectedIndexChanged += (_, _) =>
@@ -97,7 +106,7 @@ partial class MainForm
         _btnLock.Click += (_, _) => LockSpd();
 
         _toolbarPanel.Controls.AddRange([
-            _lblOnline, _lnkDonate, _lblPort, _cmbPort, _cmbDeviceType, _btnOpenPort, _btnClosePort, _btnRefreshPort,
+            _lblOnline, _lnkDonate, _lblPort, _cmbPort, _lblDeviceType, _cmbDeviceType, _btnOpenPort, _btnClosePort, _btnRefreshPort,
             _btnRead, _btnLoad, _btnBackup, _btnUnlock, _btnLock,
         ]);
 
@@ -174,15 +183,29 @@ partial class MainForm
         foreach (var b in Core.JedecManufacturers.ModuleBrands)
             _cmbModuleBrand.Items.Add(b.DisplayLabel);
         _cmbModuleBrand.SelectedIndex = Core.JedecManufacturers.UnknownModuleBrandIndex;
+        _cmbModuleBrand.SelectedIndexChanged += (_, _) => CommitEditableFieldsIfLoaded();
         y += 36;
         grpParams.Controls.Add(MakeLabel("生产日期:", 12, y));
         _txtDate = new TextBox { Location = new Point(paramFieldX, y - 3), Width = paramFieldW, MaxLength = 4, Text = "0000" };
         var btnDateRand = MakeParamButton("随机", y, 0);
         var btnDateClear = MakeParamButton("清零", y, 1);
         var btnDateRead = MakeParamButton("读取", y, 2);
-        btnDateRand.Click += (_, _) => _txtDate.Text = Core.SpdEditorLogic.RandomProductionDate();
-        btnDateClear.Click += (_, _) => _txtDate.Text = "0000";
-        btnDateRead.Click += (_, _) => ReadFieldFromSpd(i => _txtDate.Text = i.ProductionDate);
+        btnDateRand.Click += (_, _) =>
+        {
+            _txtDate.Text = Core.SpdEditorLogic.RandomProductionDate();
+            CommitEditableFieldsIfLoaded();
+        };
+        btnDateClear.Click += (_, _) =>
+        {
+            _txtDate.Text = "0000";
+            CommitEditableFieldsIfLoaded();
+        };
+        btnDateRead.Click += (_, _) =>
+        {
+            ReadFieldFromSpd(i => _txtDate.Text = i.ProductionDate);
+            CommitEditableFieldsIfLoaded();
+        };
+        _txtDate.Leave += (_, _) => CommitEditableFieldsIfLoaded();
         grpParams.Controls.AddRange([_txtDate, btnDateRand, btnDateClear, btnDateRead]);
         y += 36;
         grpParams.Controls.Add(MakeLabel("序列号SN:", 12, y));
@@ -190,20 +213,52 @@ partial class MainForm
         var btnSnRand = MakeParamButton("随机", y, 0);
         var btnSnClear = MakeParamButton("清零", y, 1);
         var btnSnRead = MakeParamButton("读取", y, 2);
-        btnSnRand.Click += (_, _) => _txtSn.Text = Core.SpdEditorLogic.RandomSerial();
-        btnSnClear.Click += (_, _) => _txtSn.Text = "00000000";
-        btnSnRead.Click += (_, _) => ReadFieldFromSpd(i => _txtSn.Text = i.SerialNumber);
+        btnSnRand.Click += (_, _) =>
+        {
+            _txtSn.Text = Core.SpdEditorLogic.RandomSerial();
+            CommitEditableFieldsIfLoaded();
+        };
+        btnSnClear.Click += (_, _) =>
+        {
+            _txtSn.Text = "00000000";
+            CommitEditableFieldsIfLoaded();
+        };
+        btnSnRead.Click += (_, _) =>
+        {
+            ReadFieldFromSpd(i => _txtSn.Text = i.SerialNumber);
+            CommitEditableFieldsIfLoaded();
+        };
+        _txtSn.Leave += (_, _) => CommitEditableFieldsIfLoaded();
         grpParams.Controls.AddRange([_txtSn, btnSnRand, btnSnClear, btnSnRead]);
         y += 36;
         grpParams.Controls.Add(MakeLabel("产品型号:", 12, y));
-        _txtModel = new TextBox { Location = new Point(paramFieldX, y - 3), Width = paramActionW };
+        _txtModel = new TextBox
+        {
+            Location = new Point(paramFieldX, y - 3),
+            Width = paramActionW,
+            MaxLength = SpdEditorLogic.PartNumberSpdMax,
+        };
         int modelBtnY = y + 30;
         var btnModelRand = MakeWideParamButton("随机", modelBtnY, 0);
         var btnModelClear = MakeWideParamButton("清零", modelBtnY, 1);
         var btnModelRead = MakeWideParamButton("读取", modelBtnY, 2);
-        btnModelRand.Click += (_, _) => _txtModel.Text = RandomModelForSelectedBrand();
-        btnModelClear.Click += (_, _) => _txtModel.Text = "";
-        btnModelRead.Click += (_, _) => ReadFieldFromSpd(i => _txtModel.Text = i.PartNumber);
+        btnModelRand.Click += (_, _) =>
+        {
+            _txtModel.Text = RandomModelForSelectedBrand();
+            CommitEditableFieldsIfLoaded();
+        };
+        btnModelClear.Click += (_, _) =>
+        {
+            _txtModel.Text = "";
+            CommitEditableFieldsIfLoaded();
+        };
+        btnModelRead.Click += (_, _) =>
+        {
+            ReadFieldFromSpd(i =>
+                _txtModel.Text = SpdEditorLogic.NormalizeVisiblePartNumber(i.PartNumber));
+            CommitEditableFieldsIfLoaded();
+        };
+        _txtModel.Leave += (_, _) => CommitEditableFieldsIfLoaded();
         grpParams.Controls.AddRange([_txtModel, btnModelRand, btnModelClear, btnModelRead]);
         y += 58;
         grpParams.Controls.Add(MakeLabel("颗粒厂家:", 12, y));
@@ -216,6 +271,7 @@ partial class MainForm
         foreach (var d in Core.JedecManufacturers.DieManufacturers)
             _cmbDieBrand.Items.Add(d.DisplayLabel);
         _cmbDieBrand.SelectedIndex = Core.JedecManufacturers.UnknownDieBrandIndex;
+        _cmbDieBrand.SelectedIndexChanged += (_, _) => CommitEditableFieldsIfLoaded();
         grpParams.Controls.Add(_cmbDieBrand);
         grpParams.Controls.Add(_cmbModuleBrand);
 
