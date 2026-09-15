@@ -15,8 +15,9 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当�
 
 示例：`Ver26.38.0002`（2026 年第 38 周，本周第 2 次发布）
 
-- **仅在**向 GitHub **推送发布打包程序**时递增（`scripts/Publish-Release.ps1`）
+- **仅在**向 GitHub **发布新版本**时递增（`scripts/Publish-Release.ps1`）
 - 同一年周内流水号 +1；跨周则流水从 `0001` 起
+- 发布顺序：**先**同步源码到 GitHub，**再**发布不包含依赖的单一文件 ZIP / Release
 - 变更后写入 `Version.props`，并同步推送到 GitHub 源码仓库
 
 ## 下载
@@ -79,7 +80,7 @@ powershell -ExecutionPolicy Bypass -File .\launcher\publish-minimal.ps1
 
 产物：`publish\minimal\MemorySpdEdit-Pro-VerYY.WW.NNNN.exe`（一个文件即可拷贝运行）。
 
-正式发布打包（升版本 → 构建 → ZIP → 推送源码 → GitHub Release）：
+正式发布打包（**① 升版本并同步源码到 GitHub → ② 构建不包含依赖的单一文件 ZIP 并创建 Release**）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\Publish-Release.ps1

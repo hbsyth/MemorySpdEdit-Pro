@@ -86,20 +86,8 @@ if ($NoBump) {
     Write-Host ("==> Version bumped to {0}" -f $label)
 }
 
-Write-Host "==> Build framework-dependent single-file (no runtime bundled)"
-& powershell -ExecutionPolicy Bypass -File (Join-Path $root "launcher\publish-minimal.ps1")
-if ($LASTEXITCODE -ne 0) { throw "publish-minimal failed" }
-
-$exeName = "MemorySpdEdit-Pro-$label.exe"
-$exe = Join-Path $root "publish\minimal\$exeName"
-if (-not (Test-Path $exe)) { throw ("missing {0}" -f $exe) }
-
-$zipName = "MemorySpdEdit-Pro-$label.zip"
-$zipPath = Join-Path $root $zipName
-if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-Compress-Archive -Path $exe -DestinationPath $zipPath -CompressionLevel Optimal
-Write-Host ("==> Packed {0}" -f $zipName)
-
+# --- Step 1: sync source to GitHub ---
+Write-Host "==> Step 1/2: Sync source code to GitHub"
 if (-not $env:GIT_AUTHOR_NAME) { $env:GIT_AUTHOR_NAME = "hbsyth" }
 if (-not $env:GIT_AUTHOR_EMAIL) { $env:GIT_AUTHOR_EMAIL = "hbsyth@qq.com" }
 $env:GIT_COMMITTER_NAME = $env:GIT_AUTHOR_NAME
@@ -119,7 +107,26 @@ if ($pending) {
     }
 } else {
     Write-Host "==> No source changes to commit"
+    if (-not $SkipPush) {
+        git push $Remote HEAD
+        Write-Host ("==> Ensured remote {0} is up to date" -f $Remote)
+    }
 }
+
+# --- Step 2: framework-dependent single-file package + GitHub Release ---
+Write-Host "==> Step 2/2: Publish framework-dependent single-file (no runtime bundled)"
+& powershell -ExecutionPolicy Bypass -File (Join-Path $root "launcher\publish-minimal.ps1")
+if ($LASTEXITCODE -ne 0) { throw "publish-minimal failed" }
+
+$exeName = "MemorySpdEdit-Pro-$label.exe"
+$exe = Join-Path $root "publish\minimal\$exeName"
+if (-not (Test-Path $exe)) { throw ("missing {0}" -f $exe) }
+
+$zipName = "MemorySpdEdit-Pro-$label.zip"
+$zipPath = Join-Path $root $zipName
+if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+Compress-Archive -Path $exe -DestinationPath $zipPath -CompressionLevel Optimal
+Write-Host ("==> Packed {0}" -f $zipName)
 
 if (-not $SkipRelease) {
     $gh = "C:\Program Files\GitHub CLI\gh.exe"
