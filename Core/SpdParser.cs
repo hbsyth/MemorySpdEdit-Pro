@@ -199,7 +199,7 @@ public static class SpdParser
 
     /// <summary>
     /// 从 JEDEC 基础 SPD 读取默认运行频率与主时序（CL-tRCD-tRP-tRAS，单位：时钟周期 nCK）。
-    /// DDR4：字节存 MTB/FTB 时间，按 JESD21-C 用 ceil(tXXmin / tCKAVGmin) 换算。
+    /// DDR5：ps 直存 + JESD400-5B 0.30% nCK；DDR4/DDR3：MTB(+FTB) + ceil(t/tCK)。
     /// </summary>
     public static (string Frequency, string Timing) ReadJedecSpeed(byte[] data, SpdMemoryType type)
     {
@@ -217,10 +217,10 @@ public static class SpdParser
                 int trasMtb = ((data[27] & 0x0F) << 8) | data[28];
                 int trasPs = SpdUtils.TicksToPsDdr4(trasMtb);
 
-                int cl = PsToNckJedec(taaPs, tckPs);
-                int rcd = PsToNckJedec(trcdPs, tckPs);
-                int rp = PsToNckJedec(trpPs, tckPs);
-                int ras = PsToNckJedec(trasPs, tckPs);
+                int cl = SpdTimingRules.TimeToTicksDdr4(taaPs, tckPs);
+                int rcd = SpdTimingRules.TimeToTicksDdr4(trcdPs, tckPs);
+                int rp = SpdTimingRules.TimeToTicksDdr4(trpPs, tckPs);
+                int ras = SpdTimingRules.TimeToTicksDdr4(trasPs, tckPs);
 
                 // 若 SPD 声明了支持的 CL，取满足 tAAmin 的最小受支持 CL（JEDEC 常用做法）
                 cl = SnapToSupportedCasDdr4(data, cl);
@@ -245,6 +245,30 @@ public static class SpdParser
                 cl = SnapToSupportedCasDdr5(data, cl);
                 return ($"DDR5-{mt}", $"{cl}-{rcd}-{rp}-{ras}");
             }
+
+            if (type == SpdMemoryType.Ddr3 && data.Length > 22)
+            {
+                // Annex K：MTB=Byte10/Byte11 ns（常见 1/8=0.125ns）；tCK@12、tAA@16、tRCD@17、tRP@18、tRAS@21/22
+                // FTB：tCK@34、tAA@35、tRCD@36、tRP@37（1ps）；nCK = ceil（勿用 DDR5 0.30%）
+                int mtbPs = Ddr3MtbUnitPs(data);
+                int tckPs = data[12] * mtbPs + (data.Length > 34 ? SpdUtils.SignedByte(data[34]) : 0);
+                if (tckPs <= 0) return ("-", "-");
+
+                int taaPs = data[16] * mtbPs + (data.Length > 35 ? SpdUtils.SignedByte(data[35]) : 0);
+                int trcdPs = data[17] * mtbPs + (data.Length > 36 ? SpdUtils.SignedByte(data[36]) : 0);
+                int trpPs = data[18] * mtbPs + (data.Length > 37 ? SpdUtils.SignedByte(data[37]) : 0);
+                int trasMtb = ((data[21] & 0x0F) << 8) | data[22];
+                int trasPs = trasMtb * mtbPs;
+
+                int cl = SpdTimingRules.TimeToTicksDdr3(taaPs, tckPs);
+                int rcd = SpdTimingRules.TimeToTicksDdr3(trcdPs, tckPs);
+                int rp = SpdTimingRules.TimeToTicksDdr3(trpPs, tckPs);
+                int ras = SpdTimingRules.TimeToTicksDdr3(trasPs, tckPs);
+                cl = SnapToSupportedCasDdr3(data, cl);
+
+                int mt = (int)Math.Round(SpdUtils.MtFromMinCyclePs(tckPs));
+                return ($"DDR3-{mt}", $"{cl}-{rcd}-{rp}-{ras}");
+            }
         }
         catch
         {
@@ -254,11 +278,15 @@ public static class SpdParser
         return ("-", "-");
     }
 
-    /// <summary>JEDEC：nXX = ceil(tXXmin / tCKAVGmin)</summary>
-    private static int PsToNckJedec(int timingPs, int tckPs)
+    /// <summary>DDR3 MTB 单位（ps）= Byte10/Byte11 × 1000；缺省 125ps（0.125ns）。</summary>
+    private static int Ddr3MtbUnitPs(byte[] data)
     {
-        if (timingPs <= 0 || tckPs <= 0) return 0;
-        return (int)Math.Ceiling(timingPs / (double)tckPs);
+        int dividend = data.Length > 10 ? data[10] : 1;
+        int divisor = data.Length > 11 ? data[11] : 8;
+        if (dividend <= 0) dividend = 1;
+        if (divisor <= 0) divisor = 8;
+        int ps = (int)Math.Round(dividend * 1000.0 / divisor);
+        return ps > 0 ? ps : 125;
     }
 
     /// <summary>
@@ -299,6 +327,23 @@ public static class SpdParser
             int bit = (cl - 20) / 2;
             if (bit is < 0 or >= 40) continue;
             if ((data[24 + bit / 8] & (1 << (bit % 8))) != 0)
+                return cl;
+        }
+
+        return calculatedCl;
+    }
+
+    /// <summary>
+    /// DDR3：Byte14–15 CAS 位图，CL4–18；取 ≥ 计算值的最小受支持 CL。
+    /// </summary>
+    private static int SnapToSupportedCasDdr3(byte[] data, int calculatedCl)
+    {
+        if (calculatedCl <= 0 || data.Length < 16) return calculatedCl;
+
+        for (int cl = Math.Max(4, calculatedCl); cl <= 18; cl++)
+        {
+            int bit = cl - 4;
+            if ((data[14 + bit / 8] & (1 << (bit % 8))) != 0)
                 return cl;
         }
 

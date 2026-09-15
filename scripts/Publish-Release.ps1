@@ -86,11 +86,12 @@ if ($NoBump) {
     Write-Host ("==> Version bumped to {0}" -f $label)
 }
 
-Write-Host "==> Build framework-dependent single-file"
+Write-Host "==> Build self-contained single-file"
 & powershell -ExecutionPolicy Bypass -File (Join-Path $root "launcher\publish-minimal.ps1")
 if ($LASTEXITCODE -ne 0) { throw "publish-minimal failed" }
 
-$exe = Join-Path $root "publish\minimal\MemorySpdEdit-Pro.exe"
+$exeName = "MemorySpdEdit-Pro-$label.exe"
+$exe = Join-Path $root "publish\minimal\$exeName"
 if (-not (Test-Path $exe)) { throw ("missing {0}" -f $exe) }
 
 $zipName = "MemorySpdEdit-Pro-$label.zip"
@@ -104,9 +105,9 @@ if (-not $env:GIT_AUTHOR_EMAIL) { $env:GIT_AUTHOR_EMAIL = "hbsyth@qq.com" }
 $env:GIT_COMMITTER_NAME = $env:GIT_AUTHOR_NAME
 $env:GIT_COMMITTER_EMAIL = $env:GIT_AUTHOR_EMAIL
 
-git add -- Version.props SpdEditor.csproj AppVersion.cs MainForm.Designer.cs `
-    installer/SetupApp/SetupApp.csproj installer/SetupApp/Program.cs `
-    README.md scripts/Publish-Release.ps1
+git add -- Version.props SpdEditor.csproj AppVersion.cs AppPaths.cs MainForm.cs MainForm.Designer.cs `
+    Program.cs XmpInfoForm.cs README.md scripts/Publish-Release.ps1 launcher/publish-minimal.ps1
+git add -- Core/
 git add -u -- .
 $pending = git status --porcelain
 if ($pending) {
@@ -128,13 +129,13 @@ if (-not $SkipRelease) {
     $notes = @(
         ("## MemorySpdEdit Pro {0}" -f $label),
         "",
-        "Framework-dependent single-file package (requires .NET 10 Desktop Runtime x64).",
+        "Self-contained single-file package (win-x64). No .NET runtime install required.",
         "",
         ("Version rule: Ver + YY + . + ISO-week(WW) + . + serial(NNNN). This build: {0}." -f $label),
         "",
         "### Asset",
-        ("- `{0}` - extract and run MemorySpdEdit-Pro.exe" -f $zipName)
-    ) -join "`n"
+        ('- `{0}` - extract and run `{1}`' -f $zipName, $exeName)
+    ) -join [Environment]::NewLine
     [System.IO.File]::WriteAllText($notesPath, $notes, (New-Object System.Text.UTF8Encoding $true))
     & $gh release create $label $zipPath --repo $Repo --title $title --notes-file $notesPath
     Write-Host ("==> https://github.com/{0}/releases/tag/{1}" -f $Repo, $label)

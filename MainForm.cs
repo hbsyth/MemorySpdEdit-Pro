@@ -34,6 +34,7 @@ public partial class MainForm : Form
     private Button _btnOpenPort = null!;
     private Button _btnClosePort = null!;
     private Button _btnRefreshPort = null!;
+    private Button _btnXmpInfo = null!;
     private Button _btnRead = null!;
     private Button _btnLoad = null!;
     private Button _btnBackup = null!;
@@ -85,52 +86,58 @@ public partial class MainForm : Form
 
     private void LayoutToolbarButtons()
     {
-        // 三行固定布局：窗口缩放时尺寸与间距不变；标签+下拉合占一列，与下方按钮左右对齐
+        // 与截图一致：
+        // 行2：端口 | 类型 | 打开 | 关闭 | 刷新
+        // 行3：读取 | 载入 | 保存 | 解锁 | 上锁 | XMP信息（6 列对齐）
         const int padLeft = 12;
+        const int padRight = 12;
         const int btnHeight = 30;
         const int rowGap = 10;
         const int gap = 12;
-        const int colWidth = 180;
         const int labelComboGap = 2;
+        const int cols = 6;
+
+        int usable = Math.Max(720, _toolbarPanel.ClientSize.Width - padLeft - padRight);
+        int colWidth = Math.Min(160, (usable - gap * (cols - 1)) / cols);
 
         int y1 = 10;
         int y2 = y1 + btnHeight + rowGap;
         int y3 = y2 + btnHeight + rowGap;
 
-        int x0 = padLeft;
-        int x1 = x0 + colWidth + gap;
-        int x2 = x1 + colWidth + gap;
-        int x3 = x2 + colWidth + gap;
-        int x4 = x3 + colWidth + gap;
+        int[] x = new int[cols];
+        x[0] = padLeft;
+        for (int i = 1; i < cols; i++)
+            x[i] = x[i - 1] + colWidth + gap;
 
-        // 第 1 行：在线状态（左）+ 打赏（右，靠近标题栏最小化按钮）
-        _lblOnline.SetBounds(x0, y1, colWidth, btnHeight);
+        // 第 1 行：在线 + 打赏
+        _lblOnline.SetBounds(x[0], y1, Math.Max(colWidth, 100), btnHeight);
         var donateSize = _lnkDonate.PreferredSize;
-        int donateX = Math.Max(x0 + colWidth + gap, _toolbarPanel.ClientSize.Width - donateSize.Width - 12);
+        int donateX = Math.Max(x[1], _toolbarPanel.ClientSize.Width - donateSize.Width - padRight);
         _lnkDonate.SetBounds(donateX, y1 + (btnHeight - donateSize.Height) / 2, donateSize.Width, donateSize.Height);
 
-        // 第 2 行：端口 / 内存类型（标签+下拉合计 = colWidth）+ 打开/关闭/刷新
+        // 第 2 行：端口 / 类型 / 打开 / 关闭 / 刷新
         int comboH = Math.Clamp(_cmbPort.PreferredHeight, 24, btnHeight);
         int comboY = y2 + (btnHeight - comboH) / 2;
 
         int portLabelW = TextRenderer.MeasureText(_lblPort.Text, _lblPort.Font).Width;
-        _lblPort.SetBounds(x0, y2, portLabelW, btnHeight);
-        _cmbPort.SetBounds(x0 + portLabelW + labelComboGap, comboY, colWidth - portLabelW - labelComboGap, comboH);
+        _lblPort.SetBounds(x[0], y2, portLabelW, btnHeight);
+        _cmbPort.SetBounds(x[0] + portLabelW + labelComboGap, comboY, colWidth - portLabelW - labelComboGap, comboH);
 
         int typeLabelW = TextRenderer.MeasureText(_lblDeviceType.Text, _lblDeviceType.Font).Width;
-        _lblDeviceType.SetBounds(x1, y2, typeLabelW, btnHeight);
-        _cmbDeviceType.SetBounds(x1 + typeLabelW + labelComboGap, comboY, colWidth - typeLabelW - labelComboGap, comboH);
+        _lblDeviceType.SetBounds(x[1], y2, typeLabelW, btnHeight);
+        _cmbDeviceType.SetBounds(x[1] + typeLabelW + labelComboGap, comboY, colWidth - typeLabelW - labelComboGap, comboH);
 
-        _btnOpenPort.SetBounds(x2, y2, colWidth, btnHeight);
-        _btnClosePort.SetBounds(x3, y2, colWidth, btnHeight);
-        _btnRefreshPort.SetBounds(x4, y2, colWidth, btnHeight);
+        _btnOpenPort.SetBounds(x[2], y2, colWidth, btnHeight);
+        _btnClosePort.SetBounds(x[3], y2, colWidth, btnHeight);
+        _btnRefreshPort.SetBounds(x[4], y2, colWidth, btnHeight);
 
-        // 第 3 行：读取/载入/保存/解锁/上锁（与上行同列宽、同间距）
-        _btnRead.SetBounds(x0, y3, colWidth, btnHeight);
-        _btnLoad.SetBounds(x1, y3, colWidth, btnHeight);
-        _btnBackup.SetBounds(x2, y3, colWidth, btnHeight);
-        _btnUnlock.SetBounds(x3, y3, colWidth, btnHeight);
-        _btnLock.SetBounds(x4, y3, colWidth, btnHeight);
+        // 第 3 行：读取 / 载入 / 保存 / 解锁 / 上锁 / XMP信息
+        _btnRead.SetBounds(x[0], y3, colWidth, btnHeight);
+        _btnLoad.SetBounds(x[1], y3, colWidth, btnHeight);
+        _btnBackup.SetBounds(x[2], y3, colWidth, btnHeight);
+        _btnUnlock.SetBounds(x[3], y3, colWidth, btnHeight);
+        _btnLock.SetBounds(x[4], y3, colWidth, btnHeight);
+        _btnXmpInfo.SetBounds(x[5], y3, colWidth, btnHeight);
     }
 
     private void SyncDeviceTypeFromUi()
@@ -637,36 +644,46 @@ public partial class MainForm : Form
 
         if (!_serial.IsOpen) { Log("[ERR] 设备未连接", true); return; }
 
-        // 先保存界面设定值（读取芯片后会刷新部分字段）
-        int uiBrandIndex = _cmbModuleBrand.SelectedIndex;
-        int uiDieIndex = _cmbDieBrand.SelectedIndex;
-        string uiDate = _txtDate.Text;
-        string uiSn = _txtSn.Text;
-        string uiModel = _txtModel.Text;
+        // 烧录目标 = 当前内存中的 SPD（载入 BIN / 已读芯片 + 界面字段），不得被「读芯片」覆盖掉 XMP 等非界面区
+        if (_spdData.Length == 0)
+        {
+            const string tip = "请先读取芯片或载入 BIN 后再烧录";
+            Log($"[ERR] {tip}", true);
+            MessageBox.Show(this, tip, "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
 
         _btnWrite.Enabled = false;
         _btnRead.Enabled = false;
         try
         {
-            Log("烧录前自动读取当前内存条 SPD...");
+            if (!ApplyFieldsToSpd()) return;
+
+            // 烧录硬门槛：对待写入映像做 CRC 校验；异常则自动纠错，仍失败则中止
+            if (!EnsureWritePayloadCrcOrAbort())
+                return;
+
+            byte[] desired = (byte[])_spdData.Clone();
+
+            Log("烧录前自动读取当前内存条 SPD（仅用于对比/备份，不覆盖待写入数据）...");
             if (!await ReadFromChipCoreAsync(populateUi: false))
             {
+                // 读失败时恢复待写入映像，避免界面/后续操作落在半截芯片数据上
+                _spdData = desired;
+                _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
                 Log("[ERR] 烧录已取消：未能读取当前 SPD", true);
                 return;
             }
 
-            // 芯片原始数据（对比 / 备份用）
             byte[] chipOriginal = (byte[])_spdData.Clone();
             var chipInfo = SpdParser.Parse(chipOriginal, _i2cAddress);
 
-            // 恢复界面设定（含颗粒厂家，允许烧录修改）
-            _cmbModuleBrand.SelectedIndex = uiBrandIndex;
-            _cmbDieBrand.SelectedIndex = uiDieIndex;
-            _txtDate.Text = uiDate;
-            _txtSn.Text = uiSn;
-            _txtModel.Text = uiModel;
+            // 写回目标仍为烧录前映像（含外部 BIN 改过的 XMP/时序等）
+            _spdData = desired;
+            _deviceType = SpdProtocol.DetectDeviceType(_spdData);
+            SelectDeviceTypeInUi(_deviceType);
+            _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
 
-            if (!ApplyFieldsToSpd()) return;
             if (!SpdProtocol.DataSizes.TryGetValue(_deviceType, out int size))
                 size = _spdData.Length;
 
@@ -698,7 +715,7 @@ public partial class MainForm : Form
                 Log("已跳过烧录前原始 BIN 备份");
             }
 
-            Log($"开始烧录，共 {changes.Count} 字节...");
+            Log($"开始烧录，共 {changes.Count} 字节（相对芯片差分，含 XMP/时序等非界面字段）...");
             byte i2c = (byte)_i2cAddress;
             for (int i = 0; i < changes.Count; i++)
             {
@@ -745,6 +762,40 @@ public partial class MainForm : Form
     }
 
     /// <summary>
+    /// 烧录前对待写入 SPD 做 CRC 校验；失败则自动纠错并复检。
+    /// 纠错后仍失败则弹窗中止，返回 false。
+    /// </summary>
+    private bool EnsureWritePayloadCrcOrAbort()
+    {
+        var memType = SpdEditorLogic.ResolveMemoryType(_spdData, _spdInfo.MemoryType);
+        Log("烧录前校验待写入数据 CRC（含 JEDEC / XMP / EXPO）...");
+
+        if (SpdEditorLogic.VerifyChecksums(_spdData, memType, out string beforeReport))
+        {
+            Log($"[OK] 待写入 CRC 校验通过 — {beforeReport}");
+            return true;
+        }
+
+        Log($"[WARN] 待写入 CRC 异常，正在自动纠错 — {beforeReport}", true);
+        if (!SpdEditorLogic.EnsureChecksums(_spdData, memType, out bool repaired, out string afterReport)
+            || !SpdEditorLogic.VerifyChecksums(_spdData, memType, out afterReport))
+        {
+            const string tip = "待写入 BIN 的 CRC 自动纠错失败，已取消烧录";
+            Log($"[ERR] {tip} — {afterReport}", true);
+            MessageBox.Show(this, $"{tip}\n\n{afterReport}", "CRC 校验失败",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+
+        _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
+        UpdateInfoPanel();
+        Log(repaired
+            ? $"[OK] CRC 已自动纠错，开始准备写入 — {afterReport}"
+            : $"[OK] CRC 已重算并复检通过 — {afterReport}");
+        return true;
+    }
+
+    /// <summary>
     /// 烧录前检测 SPD 写保护。已上锁则提示并返回 true（应中止烧录）。
     /// </summary>
     private async Task<bool> IsSpdLockedBeforeBurnAsync(List<(int Addr, byte Val)> changes)
@@ -782,13 +833,63 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// 将刚读取的芯片原始 BIN 保存到程序目录，文件名含 4 位随机号。
+    /// 可执行文件所在目录（烧录备份写入此处）。
+    /// 单一文件发布下 ProcessPath 即用户启动的 exe 路径。
+    /// </summary>
+    private static string GetExecutableDirectory()
+    {
+        if (!string.IsNullOrEmpty(AppPaths.HomeDirectory))
+            return AppPaths.HomeDirectory;
+
+        string? processPath = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(processPath))
+        {
+            string? dir = Path.GetDirectoryName(Path.GetFullPath(processPath));
+            if (!string.IsNullOrEmpty(dir) && !AppPaths.IsPayloadCacheDirectory(dir))
+                return dir;
+        }
+
+        string? home = Environment.GetEnvironmentVariable("MEMORYSPDEDIT_HOME");
+        if (!string.IsNullOrWhiteSpace(home))
+        {
+            try
+            {
+                string full = Path.GetFullPath(home.Trim().Trim('"'));
+                if (Directory.Exists(full) && !AppPaths.IsPayloadCacheDirectory(full))
+                    return full;
+            }
+            catch
+            {
+                // fall through
+            }
+        }
+
+        try
+        {
+            string cwd = Environment.CurrentDirectory;
+            if (!string.IsNullOrEmpty(cwd)
+                && Directory.Exists(cwd)
+                && !AppPaths.IsPayloadCacheDirectory(cwd))
+                return Path.GetFullPath(cwd);
+        }
+        catch
+        {
+            // fall through
+        }
+
+        return AppContext.BaseDirectory.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    /// <summary>
+    /// 将刚读取的芯片原始 BIN 保存到程序所在目录，文件名含时间戳与随机号。
     /// </summary>
     private string SaveBurnBackupBin(byte[] data, SpdInfo info)
     {
         try
         {
-            string dir = AppDomain.CurrentDomain.BaseDirectory;
+            string dir = GetExecutableDirectory();
+            Directory.CreateDirectory(dir);
             string fileName = BuildBinFileName(info, info.PartNumber);
             string path = Path.Combine(dir, fileName);
             File.WriteAllBytes(path, data);
@@ -799,6 +900,32 @@ public partial class MainForm : Form
             Log($"[ERR] 备份失败: {ex.Message}", true);
             return "";
         }
+    }
+
+    private void ShowXmpInfo()
+    {
+        if (_spdData.Length == 0)
+        {
+            const string tip = "请先读取或载入 BIN，再查看 XMP 信息";
+            Log($"[ERR] {tip}", true);
+            MessageBox.Show(this, tip, "XMP信息", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        string summary = _spdInfo.MemoryType != SpdMemoryType.Unknown
+            ? $"{_spdInfo.ModuleBrand}  {_spdInfo.PartNumber}  {_spdInfo.FrequencyLabel}  {_spdInfo.TimingLabel}"
+            : $"{_spdData.Length} 字节";
+
+        Log("[INFO] 打开 XMP/SPD 配置窗体");
+        using var dlg = new XmpInfoForm(_spdData, summary);
+        if (dlg.ShowDialog(this) != DialogResult.OK || !dlg.Applied)
+            return;
+
+        _spdData = dlg.ResultData;
+        _spdInfo = SpdParser.Parse(_spdData, _i2cAddress);
+        PopulateFieldsFromSpd();
+        UpdateInfoPanel();
+        Log("[OK] 已将 XMP/SPD 配置写回当前 BIN（CRC 已自动完善）");
     }
 
     private void LoadBinFile()

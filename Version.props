@@ -1,20 +1,19 @@
 <!--
-  产品版本规则：Ver + 年度后2位 + . + 周度(2位) + . + 流水号(4位)
-  例：Ver26.38.0001
-  仅在向 GitHub 推送发布打包程序时变更（scripts/Publish-Release.ps1）；
-  变更后写入本文件并同步 GitHub 源码。
-  当前：Ver26.38.0001
+  Version rule: Ver + YY + . + ISO-week(WW) + . + serial(NNNN)
+  Example: Ver26.38.0001
+  Bump only when publishing package to GitHub (scripts/Publish-Release.ps1).
+  Current: Ver26.38.0002
 -->
 <Project>
   <PropertyGroup>
     <AppVersionYear>26</AppVersionYear>
     <AppVersionWeek>38</AppVersionWeek>
-    <AppVersionSerial>1</AppVersionSerial>
-    <AppVersionLabel>Ver26.38.0001</AppVersionLabel>
-    <Version>26.38.1</Version>
-    <AssemblyVersion>26.38.1.0</AssemblyVersion>
-    <FileVersion>26.38.1.0</FileVersion>
-    <InformationalVersion>Ver26.38.0001</InformationalVersion>
+    <AppVersionSerial>2</AppVersionSerial>
+    <AppVersionLabel>Ver26.38.0002</AppVersionLabel>
+    <Version>26.38.2</Version>
+    <AssemblyVersion>26.38.2.0</AssemblyVersion>
+    <FileVersion>26.38.2.0</FileVersion>
+    <InformationalVersion>Ver26.38.0002</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

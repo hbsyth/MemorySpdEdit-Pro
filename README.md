@@ -1,6 +1,6 @@
 # MemorySpdEdit Pro · 内存SPD修改工具 Pro
 
-Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当前 **Ver26.38.0001**），作者 SuperGun。
+Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当前 **Ver26.38.0002**），作者 SuperGun。
 
 支持：
 - [spdrw](https://github.com/spdrw/spdrw.github.io) 文本串口协议
@@ -13,7 +13,7 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当�
 
 格式：`Ver` + 年度后 2 位 + `.` + ISO 周度（2 位）+ `.` + 流水号（4 位）
 
-示例：`Ver26.38.0001`（2026 年第 38 周，本周第 1 次发布）
+示例：`Ver26.38.0002`（2026 年第 38 周，本周第 2 次发布）
 
 - **仅在**向 GitHub **推送发布打包程序**时递增（`scripts/Publish-Release.ps1`）
 - 同一年周内流水号 +1；跨周则流水从 `0001` 起
@@ -21,9 +21,9 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当�
 
 ## 下载
 
-正式发布页：**[Releases](https://github.com/hbsyth/MemorySpdEdit-Pro/releases)**（最新标签形如 `Ver26.38.0001`）
+正式发布页：**[Releases](https://github.com/hbsyth/MemorySpdEdit-Pro/releases)**（最新标签形如 `Ver26.38.0002`）
 
-推荐下载 **无依赖单一文件** ZIP：`MemorySpdEdit-Pro-VerYY.WW.NNNN.zip`（解压后运行 `MemorySpdEdit-Pro.exe`，需 .NET 10 Desktop Runtime x64）。
+推荐下载 **无依赖单一文件** ZIP：`MemorySpdEdit-Pro-VerYY.WW.NNNN.zip`（解压后运行 `MemorySpdEdit-Pro-VerYY.WW.NNNN.exe`，无需安装 .NET 运行时）。
 
 使用本机 SMBus 读取 SPD 时，请右键程序「以管理员身份运行」。
 
@@ -71,15 +71,21 @@ dotnet publish SpdEditor.csproj -c Release -r win-x64 -o .\publish
 
 产物：`publish\MemorySpdEdit-Pro.exe`（一个文件即可拷贝运行）。
 
-框架依赖最小单文件（启动前检测 .NET 10；未安装则中文提示并引导下载 Desktop Runtime）：
+无依赖单一文件（自包含 win-x64，文件名含版本号；无需安装 .NET 运行时）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\launcher\publish-minimal.ps1
 ```
 
-产物：`publish\minimal\MemorySpdEdit-Pro.exe`。
+产物：`publish\minimal\MemorySpdEdit-Pro-VerYY.WW.NNNN.exe`（一个文件即可拷贝运行）。
 
-说明：首次启动会把运行库解压到临时目录，可能稍慢；之后启动会快很多。已关闭单文件压缩与 R2R，并避免启动时解压 PawnIO 安装包，以缩短首次等待。
+正式发布打包（升版本 → 构建 → ZIP → 推送源码 → GitHub Release）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\Publish-Release.ps1
+```
+
+说明：.NET 单文件首次启动可能略慢；已关闭单文件压缩与 R2R，并避免启动时解压 PawnIO 安装包。烧录备份默认写在该 exe 所在目录。
 
 ## 硬件
 

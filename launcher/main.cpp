@@ -1,4 +1,4 @@
-// Native bootstrap: check .NET 10 Desktop Runtime, then run embedded app payload.
+// Native bootstrap: check .NET 10 Desktop Runtime, then launch sibling host exe (no extract).
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <Shellapi.h>
@@ -12,8 +12,8 @@
 
 namespace {
 
-// UTF-16 literals via \u to avoid MSVC source code-page issues.
 constexpr wchar_t kAppTitle[] = L"MemorySpdEdit Pro";
+constexpr wchar_t kHostFileName[] = L"MemorySpdEdit-Pro.host.exe";
 constexpr wchar_t kDownloadUrl[] =
     L"https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe";
 constexpr wchar_t kDownloadPage[] = L"https://dotnet.microsoft.com/download/dotnet/10.0";
@@ -65,7 +65,6 @@ bool HasDotNet10Desktop() {
 }
 
 void PromptInstallRuntime() {
-    // 本机未检测到 .NET 10 桌面运行时（Desktop Runtime x64）。\n\n请先安装后再启动本程序。\n\n点击「是」打开官方安装包下载；点击「否」打开下载说明页。
     const wchar_t* msg =
         L"\u672c\u673a\u672a\u68c0\u6d4b\u5230 .NET 10 \u684c\u9762\u8fd0\u884c\u65f6\uff08Desktop Runtime x64\uff09\u3002\n\n"
         L"\u8bf7\u5148\u5b89\u88c5\u540e\u518d\u542f\u52a8\u672c\u7a0b\u5e8f\u3002\n\n"
@@ -78,55 +77,27 @@ void PromptInstallRuntime() {
     }
 }
 
-bool GetPayloadDir(wchar_t* out, size_t cch) {
-    wchar_t local[MAX_PATH]{};
-    if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, local)))
+bool GetLauncherDirectory(wchar_t* out, size_t cch) {
+    wchar_t module[MAX_PATH]{};
+    DWORD n = GetModuleFileNameW(nullptr, module, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH)
         return false;
-    swprintf_s(out, cch, L"%s\\MemorySpdEdit-Pro", local);
-    CreateDirectoryW(out, nullptr);
-    return true;
+    wchar_t* slash = wcsrchr(module, L'\\');
+    if (!slash)
+        return false;
+    *slash = L'\0';
+    return wcscpy_s(out, cch, module) == 0;
 }
 
-bool ExtractPayload(const wchar_t* targetPath) {
-    HRSRC res = FindResourceW(nullptr, MAKEINTRESOURCEW(IDR_APP_PAYLOAD), RT_RCDATA);
-    if (!res) return false;
-    HGLOBAL h = LoadResource(nullptr, res);
-    if (!h) return false;
-    const void* data = LockResource(h);
-    DWORD size = SizeofResource(nullptr, res);
-    if (!data || size == 0) return false;
+bool LaunchHost(const wchar_t* hostPath, const wchar_t* launcherDir) {
+    SetEnvironmentVariableW(L"MEMORYSPDEDIT_HOME", launcherDir);
 
-    WIN32_FILE_ATTRIBUTE_DATA attr{};
-    if (GetFileAttributesExW(targetPath, GetFileExInfoStandard, &attr)) {
-        ULARGE_INTEGER existing{};
-        existing.LowPart = attr.nFileSizeLow;
-        existing.HighPart = attr.nFileSizeHigh;
-        if (existing.QuadPart == size) return true;
-    }
-
-    wchar_t tmpPath[MAX_PATH]{};
-    swprintf_s(tmpPath, L"%s.tmp", targetPath);
-    HANDLE file = CreateFileW(tmpPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) return false;
-    DWORD written = 0;
-    BOOL ok = WriteFile(file, data, size, &written, nullptr);
-    CloseHandle(file);
-    if (!ok || written != size) {
-        DeleteFileW(tmpPath);
-        return false;
-    }
-    MoveFileExW(tmpPath, targetPath, MOVEFILE_REPLACE_EXISTING);
-    return true;
-}
-
-bool LaunchPayload(const wchar_t* path) {
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
-    wchar_t cmd[MAX_PATH + 8]{};
-    swprintf_s(cmd, L"\"%s\"", path);
-    if (!CreateProcessW(path, cmd, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi))
+    wchar_t cmd[(MAX_PATH * 2) + 64]{};
+    swprintf_s(cmd, L"\"%s\" --app-home=\"%s\"", hostPath, launcherDir);
+    if (!CreateProcessW(hostPath, cmd, nullptr, nullptr, FALSE, 0, nullptr, launcherDir, &si, &pi))
         return false;
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
@@ -141,22 +112,24 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
-    wchar_t dir[MAX_PATH]{};
-    wchar_t target[MAX_PATH]{};
-    if (!GetPayloadDir(dir, MAX_PATH)) {
+    wchar_t launcherDir[MAX_PATH]{};
+    if (!GetLauncherDirectory(launcherDir, MAX_PATH)) {
         MessageBoxW(nullptr,
-                    L"\u65e0\u6cd5\u521b\u5efa\u672c\u5730\u7f13\u5b58\u76ee\u5f55\u3002",
+                    L"\u65e0\u6cd5\u83b7\u53d6\u7a0b\u5e8f\u76ee\u5f55\u3002",
                     kAppTitle, MB_ICONERROR | MB_OK);
         return 2;
     }
-    swprintf_s(target, L"%s\\MemorySpdEdit-Pro.app.exe", dir);
-    if (!ExtractPayload(target)) {
+
+    wchar_t hostPath[MAX_PATH]{};
+    if (swprintf_s(hostPath, L"%s\\%s", launcherDir, kHostFileName) <= 0
+        || GetFileAttributesW(hostPath) == INVALID_FILE_ATTRIBUTES) {
         MessageBoxW(nullptr,
-                    L"\u91ca\u653e\u7a0b\u5e8f\u4e3b\u4f53\u5931\u8d25\uff0c\u8bf7\u91cd\u65b0\u4e0b\u8f7d\u5b89\u88c5\u5305\u3002",
+                    L"\u672a\u627e\u5230\u540c\u76ee\u5f55\u4e0b\u7684 MemorySpdEdit-Pro.host.exe\uff0c\u8bf7\u52ff\u5206\u79bb\u542f\u52a8\u5668\u4e0e\u4e3b\u7a0b\u5e8f\u3002",
                     kAppTitle, MB_ICONERROR | MB_OK);
         return 3;
     }
-    if (!LaunchPayload(target)) {
+
+    if (!LaunchHost(hostPath, launcherDir)) {
         MessageBoxW(nullptr, L"\u542f\u52a8\u7a0b\u5e8f\u5931\u8d25\u3002", kAppTitle, MB_ICONERROR | MB_OK);
         return 4;
     }

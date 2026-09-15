@@ -4,10 +4,11 @@ namespace SpdEditor;
 static class Program
 {
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
         try
         {
+            AppPaths.Initialize(args);
             ApplicationConfiguration.Initialize();
             // 背景/系统色跟随 Windows 浅色·深色设定（Win11+；启动时生效）
 #pragma warning disable WFO5001

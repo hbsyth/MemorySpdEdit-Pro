@@ -308,23 +308,40 @@ public static class SpdEditorLogic
     }
 
     /// <summary>
-    /// DDR3：编辑模组信息区（117–125）时须置 Byte0.bit7，CRC 覆盖 0–125。
+    /// DDR3 JEDEC Byte0.bit7：0 = CRC 覆盖 0–125（含模组 ID 117–125）；1 = 仅 0–116。
+    /// 编辑模组信息区时须清零 bit7，使 CRC 覆盖 SN/日期/厂商 ID。
     /// </summary>
     public static bool EnsureDdr3CrcCoverageBit(byte[] data, SpdMemoryType memoryType)
     {
         if (memoryType != SpdMemoryType.Ddr3 || data.Length < 128)
             return false;
-        if ((data[0] & 0x80) != 0)
+        if ((data[0] & 0x80) == 0)
             return false;
-        data[0] |= 0x80;
+        data[0] = (byte)(data[0] & 0x7F);
         return true;
     }
 
     /// <summary>
+    /// DDR3 CRC 覆盖长度（JEDEC Annex K）：bit7=0 → 126 字节；bit7=1 → 117 字节。
+    /// </summary>
+    public static int GetDdr3CrcLength(byte[] data) =>
+        data.Length > 0 && (data[0] & 0x80) != 0 ? 117 : 126;
+
+    // DDR5 Intel XMP 3.0：Header@640 + Profiles@704/768/832/896/960（各 64B，末 2 字节 CRC）。
+    private const int Ddr5XmpMagicOffset = 640;
+    private const int Ddr5XmpBlockLen = 64;
+    private static readonly int[] Ddr5XmpHeaderAndProfiles =
+        [640, 704, 768, 832, 896, 960];
+
+    // DDR5 AMD EXPO：832 起共 128 字节，末 2 字节为块 CRC（与 XMP P3/User1 重叠）。
+    private const int Ddr5ExpoMagicOffset = 832;
+    private const int Ddr5ExpoBlockLen = 128;
+
+    /// <summary>
     /// 按 JEDEC 规范重算 SPD CRC-16（XMODEM / poly 0x1021，小端存放）。
     /// DDR4：字节 0–125→126/127；128–253→254/255；320–381→382/383。
-    /// DDR5：字节 0–509→510/511（模组信息区 512+ 不在此 CRC 覆盖范围内）。
-    /// DDR3：Byte0.bit7=1 时 0–125→126/127；否则 0–116→126/127。
+    /// DDR5：字节 0–509→510/511；若存在 XMP 3.0 / EXPO 则同步重算其块 CRC。
+    /// DDR3：Byte0.bit7=0 时 0–125→126/127；bit7=1 时 0–116→126/127。
     /// </summary>
     public static void UpdateChecksums(byte[] data, SpdMemoryType memoryType)
     {
@@ -333,6 +350,7 @@ public static class SpdEditorLogic
         {
             case SpdMemoryType.Ddr5 when data.Length >= 512:
                 SpdUtils.SetWord(data, 510, SpdUtils.Crc16Xmodem(data.AsSpan(0, 510)));
+                UpdateDdr5VendorProfileChecksums(data);
                 break;
             case SpdMemoryType.Ddr4 when data.Length >= 384:
                 SpdUtils.SetWord(data, 126, SpdUtils.Crc16Xmodem(data.AsSpan(0, 126)));
@@ -341,7 +359,7 @@ public static class SpdEditorLogic
                 break;
             case SpdMemoryType.Ddr3 when data.Length >= 128:
             {
-                int crcLen = (data[0] & 0x80) != 0 ? 126 : 117;
+                int crcLen = GetDdr3CrcLength(data);
                 SpdUtils.SetWord(data, 126, SpdUtils.Crc16Xmodem(data.AsSpan(0, crcLen)));
                 break;
             }
@@ -353,7 +371,7 @@ public static class SpdEditorLogic
     }
 
     /// <summary>
-    /// 确保 BIN 符合 JEDEC CRC：若当前校验失败则按规范重算并写回校验字（自动完善）。
+    /// 确保 BIN 符合 JEDEC / 厂商配置区 CRC：若当前校验失败则按规范重算并写回校验字（自动纠错）。
     /// <paramref name="repaired"/> 为 true 表示写入前 CRC 异常、已自动修正。
     /// </summary>
     public static bool EnsureChecksums(byte[] data, SpdMemoryType memoryType, out bool repaired, out string report)
@@ -366,7 +384,7 @@ public static class SpdEditorLogic
         return afterOk;
     }
 
-    /// <summary>校验当前 BIN 是否符合 JEDEC CRC；返回是否全部通过及明细。</summary>
+    /// <summary>校验当前 BIN 是否符合 JEDEC / 厂商配置区 CRC；返回是否全部通过及明细。</summary>
     public static bool VerifyChecksums(byte[] data, SpdMemoryType memoryType, out string report)
     {
         memoryType = ResolveMemoryType(data, memoryType);
@@ -399,7 +417,8 @@ public static class SpdEditorLogic
         {
             case SpdMemoryType.Ddr5:
                 Check("DDR5 CRC(0-509)", 510, 0, 510);
-                parts.Add("说明: 模组品牌/SN/型号等位于 512+，不在该 CRC 覆盖范围内");
+                if (!VerifyDdr5VendorProfileChecksums(data, parts))
+                    allOk = false;
                 break;
             case SpdMemoryType.Ddr4:
                 Check("DDR4 CRC#0(0-125)", 126, 0, 126);
@@ -408,7 +427,7 @@ public static class SpdEditorLogic
                 break;
             case SpdMemoryType.Ddr3:
             {
-                int crcLen = data.Length > 0 && (data[0] & 0x80) != 0 ? 126 : 117;
+                int crcLen = GetDdr3CrcLength(data);
                 Check($"DDR3 CRC(0-{crcLen - 1})", 126, 0, crcLen);
                 break;
             }
@@ -419,6 +438,128 @@ public static class SpdEditorLogic
 
         report = string.Join("；", parts);
         return allOk;
+    }
+
+    /// <summary>
+    /// 重算一块「末 2 字节存放 CRC」的配置区：CRC-16/XMODEM 覆盖前 blockLen-2 字节。
+    /// </summary>
+    private static bool WriteSectionCrc(byte[] data, int start, int blockLen)
+    {
+        if (data.Length < start + blockLen)
+            return false;
+
+        ushort crc = SpdUtils.Crc16Xmodem(data.AsSpan(start, blockLen - 2));
+        int crcOffset = start + blockLen - 2;
+        bool changed = data[crcOffset] != (byte)(crc & 0xFF)
+            || data[crcOffset + 1] != (byte)((crc >> 8) & 0xFF);
+        SpdUtils.SetWord(data, crcOffset, crc);
+        return changed;
+    }
+
+    private static bool CheckSectionCrc(byte[] data, int start, int blockLen, string name, List<string> parts)
+    {
+        if (data.Length < start + blockLen)
+        {
+            parts.Add($"{name}: 数据长度不足");
+            return false;
+        }
+
+        ushort expect = SpdUtils.Crc16Xmodem(data.AsSpan(start, blockLen - 2));
+        ushort actual = (ushort)SpdUtils.GetWord(data, start + blockLen - 2);
+        if (expect == actual)
+        {
+            parts.Add($"{name}: OK ({actual:X4})");
+            return true;
+        }
+
+        parts.Add($"{name}: FAIL 期望 {expect:X4} 实际 {actual:X4}");
+        return false;
+    }
+
+    private static bool HasDdr5XmpMagic(byte[] data) =>
+        data.Length >= Ddr5XmpMagicOffset + 2
+        && data[Ddr5XmpMagicOffset] == 0x0C
+        && data[Ddr5XmpMagicOffset + 1] == 0x4A;
+
+    private static bool HasDdr5ExpoMagic(byte[] data) =>
+        data.Length >= Ddr5ExpoMagicOffset + 4
+        && data[Ddr5ExpoMagicOffset] == (byte)'E'
+        && data[Ddr5ExpoMagicOffset + 1] == (byte)'X'
+        && data[Ddr5ExpoMagicOffset + 2] == (byte)'P'
+        && data[Ddr5ExpoMagicOffset + 3] == (byte)'O';
+
+    /// <summary>DDR5：存在 XMP 3.0 / EXPO 魔数时重算对应块 CRC。</summary>
+    private static void UpdateDdr5VendorProfileChecksums(byte[] data)
+    {
+        if (HasDdr5XmpMagic(data))
+        {
+            bool expo = HasDdr5ExpoMagic(data);
+            foreach (int offset in Ddr5XmpHeaderAndProfiles)
+            {
+                // EXPO 占用 832–959，与 XMP P3@832 / User1@896 重叠
+                if (expo && offset is 832 or 896)
+                    continue;
+                // Header 始终更新；Profile 仅在有有效载荷时更新（避免改写空槽）
+                if (offset != Ddr5XmpMagicOffset && !IsSectionPayloadNonEmpty(data, offset, Ddr5XmpBlockLen))
+                    continue;
+                WriteSectionCrc(data, offset, Ddr5XmpBlockLen);
+            }
+        }
+
+        if (HasDdr5ExpoMagic(data))
+            WriteSectionCrc(data, Ddr5ExpoMagicOffset, Ddr5ExpoBlockLen);
+    }
+
+    /// <summary>DDR5：校验已存在的 XMP 3.0 / EXPO 块 CRC；无魔数则跳过。</summary>
+    private static bool VerifyDdr5VendorProfileChecksums(byte[] data, List<string> parts)
+    {
+        bool allOk = true;
+        bool any = false;
+
+        if (HasDdr5XmpMagic(data))
+        {
+            any = true;
+            bool expo = HasDdr5ExpoMagic(data);
+            string[] names =
+            [
+                "XMP头", "XMP配置1", "XMP配置2", "XMP配置3", "XMP用户1", "XMP用户2"
+            ];
+            for (int i = 0; i < Ddr5XmpHeaderAndProfiles.Length; i++)
+            {
+                int offset = Ddr5XmpHeaderAndProfiles[i];
+                if (expo && offset is 832 or 896)
+                    continue;
+                if (offset != Ddr5XmpMagicOffset && !IsSectionPayloadNonEmpty(data, offset, Ddr5XmpBlockLen))
+                    continue;
+                if (!CheckSectionCrc(data, offset, Ddr5XmpBlockLen, names[i], parts))
+                    allOk = false;
+            }
+        }
+
+        if (HasDdr5ExpoMagic(data))
+        {
+            any = true;
+            if (!CheckSectionCrc(data, Ddr5ExpoMagicOffset, Ddr5ExpoBlockLen, "EXPO", parts))
+                allOk = false;
+        }
+
+        if (!any)
+            parts.Add("XMP/EXPO: 未检测到（跳过）");
+
+        return allOk;
+    }
+
+    /// <summary>块载荷（不含末尾 CRC）是否含非零字节。</summary>
+    private static bool IsSectionPayloadNonEmpty(byte[] data, int start, int blockLen)
+    {
+        int payload = blockLen - 2;
+        if (data.Length < start + payload) return false;
+        for (int i = 0; i < payload; i++)
+        {
+            if (data[start + i] != 0)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>刷写/保存前完善结果。</summary>
@@ -434,7 +575,7 @@ public static class SpdEditorLogic
     }
 
     /// <summary>
-    /// 刷写/保存前统一完善：标准长度补齐、料号 ASCII 净化、DDR3 CRC 覆盖位、JEDEC CRC。
+    /// 刷写/保存前统一完善：标准长度补齐、料号 ASCII 净化、DDR3 CRC 覆盖位、JEDEC/XMP/EXPO CRC、写前校验。
     /// </summary>
     public static bool FinalizeForFlash(ref byte[] data, SpdMemoryType hinted, out SpdComplianceReport report)
     {
@@ -445,17 +586,20 @@ public static class SpdEditorLogic
         bool pnSanitized = SanitizePartNumberRegion(data, info);
         bool ddr3Fixed = EnsureDdr3CrcCoverageBit(data, type);
         bool crcOk = EnsureChecksums(data, type, out bool crcRepaired, out string crcReport);
+        bool validateOk = SpdJedecCompliance.ValidateBeforeWrite(data, type, out string validateReport);
 
         var notes = new List<string>();
         if (lengthPadded) notes.Add($"已补齐至 {GetStandardLength(type)} 字节");
         if (pnSanitized) notes.Add("料号区非法字节已规范为空格");
-        if (ddr3Fixed) notes.Add("已置 DDR3 Byte0.bit7（CRC 覆盖模组信息区）");
-        if (crcRepaired) notes.Add("CRC 已重算");
+        if (ddr3Fixed) notes.Add("已清 DDR3 Byte0.bit7（CRC 覆盖模组信息区 0–125）");
+        if (crcRepaired) notes.Add("CRC 已自动纠错");
         notes.Add(crcReport);
+        if (!string.IsNullOrEmpty(validateReport))
+            notes.Add(validateReport);
 
         report = new SpdComplianceReport
         {
-            Ok = crcOk,
+            Ok = crcOk && validateOk,
             MemoryType = type,
             LengthPadded = lengthPadded,
             PartNumberSanitized = pnSanitized,
@@ -463,7 +607,7 @@ public static class SpdEditorLogic
             CrcRepaired = crcRepaired,
             Summary = string.Join("；", notes),
         };
-        return crcOk;
+        return report.Ok;
     }
 
     public static string RandomSerial()

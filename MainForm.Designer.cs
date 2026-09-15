@@ -17,7 +17,6 @@ partial class MainForm
     {
         Text = AppVersion.WindowTitle;
         Size = new Size(1100, 720);
-        // 覆盖固定工具栏 6×150 + 间距，缩放时工具栏尺寸不变
         MinimumSize = new Size(1080, 700);
         StartPosition = FormStartPosition.CenterScreen;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { /* ignore */ }
@@ -85,6 +84,7 @@ partial class MainForm
         _btnOpenPort = MakeToolButton("打开端口", Color.FromArgb(46, 139, 87));
         _btnClosePort = MakeToolButton("关闭端口", Color.FromArgb(105, 105, 105));
         _btnRefreshPort = MakeToolButton("刷新端口", Color.FromArgb(70, 130, 180));
+        _btnXmpInfo = MakeToolButton("XMP信息", Color.FromArgb(25, 55, 95));
         _btnRead = MakeToolButton("读取BIN", Color.FromArgb(46, 139, 87));
         _btnLoad = MakeToolButton("载入BIN", Color.FromArgb(30, 144, 255));
         _btnBackup = MakeToolButton("保存BIN", Color.FromArgb(138, 43, 226));
@@ -94,6 +94,7 @@ partial class MainForm
         _btnOpenPort.Click += async (_, _) => await OpenPortAndReadBinAsync();
         _btnClosePort.Click += (_, _) => ClosePort();
         _btnRefreshPort.Click += (_, _) => RefreshPorts(selectFirstIfNeeded: false, logResult: true);
+        _btnXmpInfo.Click += (_, _) => ShowXmpInfo();
         _cmbPort.SelectedIndexChanged += (_, _) =>
         {
             SyncChannelFromPortSelection();
@@ -106,7 +107,8 @@ partial class MainForm
         _btnLock.Click += (_, _) => LockSpd();
 
         _toolbarPanel.Controls.AddRange([
-            _lblOnline, _lnkDonate, _lblPort, _cmbPort, _lblDeviceType, _cmbDeviceType, _btnOpenPort, _btnClosePort, _btnRefreshPort,
+            _lblOnline, _lnkDonate, _lblPort, _cmbPort, _lblDeviceType, _cmbDeviceType,
+            _btnOpenPort, _btnClosePort, _btnRefreshPort, _btnXmpInfo,
             _btnRead, _btnLoad, _btnBackup, _btnUnlock, _btnLock,
         ]);
 
@@ -293,7 +295,7 @@ partial class MainForm
         };
         _chkBackupOnBurn = new CheckBox
         {
-            Text = "烧录时备份原始BIN",
+            Text = "烧录时备份原始BIN（默认：程序目录）",
             Location = new Point(12, 76),
             AutoSize = true,
             Checked = true,
