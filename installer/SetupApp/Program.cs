@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
@@ -7,9 +7,13 @@ namespace SetupApp;
 
 internal static class Program
 {
+    private static string AppVersionLabel =>
+        typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion?.Trim()
+        ?? "Ver0.00.0000";
+
     private const string AppDisplayName = "MemorySpdEdit Pro";
-    private const string AppDisplayNameCn = "内存SPD修改工具 Pro";
-    private const string AppVersion = "Ver.001";
+    private const string AppDisplayNameCn = "鍐呭瓨SPD淇敼宸ュ叿 Pro";
     private const string AppPublisher = "SuperGun";
     private const string AppUrl = "https://github.com/hbsyth/MemorySpdEdit-Pro";
     private const string ExeName = "MemorySpdEdit-Pro.exe";
@@ -27,7 +31,7 @@ internal static class Program
 
         using var form = new Form
         {
-            Text = $"{AppDisplayName} {AppVersion} 安装程序",
+            Text = $"{AppDisplayName} {AppVersionLabel} 瀹夎绋嬪簭",
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
             MinimizeBox = false,
@@ -38,7 +42,7 @@ internal static class Program
 
         var lblTitle = new Label
         {
-            Text = $"{AppDisplayNameCn}\n{AppDisplayName} {AppVersion}",
+            Text = $"{AppDisplayNameCn}\n{AppDisplayName} {AppVersionLabel}",
             Location = new Point(20, 16),
             Size = new Size(420, 48),
             Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
@@ -46,7 +50,7 @@ internal static class Program
 
         var lblPath = new Label
         {
-            Text = "安装目录：",
+            Text = "瀹夎鐩綍锛?,
             Location = new Point(20, 78),
             AutoSize = true,
         };
@@ -60,7 +64,7 @@ internal static class Program
 
         var btnBrowse = new Button
         {
-            Text = "浏览...",
+            Text = "娴忚...",
             Location = new Point(360, 100),
             Size = new Size(80, 28),
         };
@@ -68,7 +72,7 @@ internal static class Program
         {
             using var dlg = new FolderBrowserDialog
             {
-                Description = "选择安装目录",
+                Description = "閫夋嫨瀹夎鐩綍",
                 SelectedPath = txtPath.Text,
             };
             if (dlg.ShowDialog(form) == DialogResult.OK)
@@ -77,7 +81,7 @@ internal static class Program
 
         var chkDesktop = new CheckBox
         {
-            Text = "创建桌面快捷方式",
+            Text = "鍒涘缓妗岄潰蹇嵎鏂瑰紡",
             Checked = true,
             Location = new Point(20, 140),
             AutoSize = true,
@@ -85,13 +89,13 @@ internal static class Program
 
         var btnInstall = new Button
         {
-            Text = "安装",
+            Text = "瀹夎",
             Location = new Point(260, 172),
             Size = new Size(88, 30),
         };
         var btnCancel = new Button
         {
-            Text = "取消",
+            Text = "鍙栨秷",
             DialogResult = DialogResult.Cancel,
             Location = new Point(352, 172),
             Size = new Size(88, 30),
@@ -104,7 +108,7 @@ internal static class Program
                 string dir = txtPath.Text.Trim();
                 if (string.IsNullOrWhiteSpace(dir))
                 {
-                    MessageBox.Show(form, "请选择安装目录。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(form, "璇烽€夋嫨瀹夎鐩綍銆?, "鎻愮ず", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -116,8 +120,8 @@ internal static class Program
 
                 var result = MessageBox.Show(
                     form,
-                    "安装完成。是否立即运行？",
-                    "安装成功",
+                    "瀹夎瀹屾垚銆傛槸鍚︾珛鍗宠繍琛岋紵",
+                    "瀹夎鎴愬姛",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Information);
                 if (result == DialogResult.Yes)
@@ -128,7 +132,7 @@ internal static class Program
             }
             catch (Exception ex)
             {
-                MessageBox.Show(form, "安装失败：\n" + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(form, "瀹夎澶辫触锛歕n" + ex.Message, "閿欒", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 btnInstall.Enabled = true;
                 btnBrowse.Enabled = true;
             }
@@ -150,7 +154,7 @@ internal static class Program
         string targetExe = Path.Combine(installDir, ExeName);
 
         using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(PayloadResource)
-            ?? throw new InvalidOperationException("安装包内未找到程序本体，请重新下载 Setup。"))
+            ?? throw new InvalidOperationException("瀹夎鍖呭唴鏈壘鍒扮▼搴忔湰浣擄紝璇烽噸鏂颁笅杞?Setup銆?))
         using (var fs = File.Create(targetExe))
             stream.CopyTo(fs);
 
@@ -170,7 +174,7 @@ internal static class Program
             AppDisplayName);
         Directory.CreateDirectory(startMenuDir);
         CreateShortcut(Path.Combine(startMenuDir, AppDisplayName + ".lnk"), targetExe, AppDisplayNameCn);
-        CreateShortcut(Path.Combine(startMenuDir, "卸载 " + AppDisplayName + ".lnk"), uninstallBat, "卸载 " + AppDisplayName);
+        CreateShortcut(Path.Combine(startMenuDir, "鍗歌浇 " + AppDisplayName + ".lnk"), uninstallBat, "鍗歌浇 " + AppDisplayName);
 
         string? desktopLnk = null;
         if (createDesktopShortcut)
@@ -182,9 +186,9 @@ internal static class Program
         }
 
         using var key = Registry.LocalMachine.CreateSubKey(UninstallKey)
-            ?? throw new InvalidOperationException("无法写入卸载信息（请以管理员身份运行安装程序）。");
-        key.SetValue("DisplayName", $"{AppDisplayName} {AppVersion}");
-        key.SetValue("DisplayVersion", "0.0.1");
+            ?? throw new InvalidOperationException("鏃犳硶鍐欏叆鍗歌浇淇℃伅锛堣浠ョ鐞嗗憳韬唤杩愯瀹夎绋嬪簭锛夈€?);
+        key.SetValue("DisplayName", $"{AppDisplayName} {AppVersionLabel}");
+        key.SetValue("DisplayVersion", AppVersionLabel);
         key.SetValue("Publisher", AppPublisher);
         key.SetValue("URLInfoAbout", AppUrl);
         key.SetValue("InstallLocation", installDir);
@@ -215,14 +219,14 @@ Remove-Item -LiteralPath '{startMenu}' -Recurse -Force
 Remove-Item -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MemorySpdEditPro' -Recurse -Force
 Start-Sleep -Milliseconds 400
 Remove-Item -LiteralPath '{dir}' -Recurse -Force
-[void][System.Windows.Forms.MessageBox]::Show('已卸载 {AppDisplayName}。','卸载完成')
+[void][System.Windows.Forms.MessageBox]::Show('宸插嵏杞?{AppDisplayName}銆?,'鍗歌浇瀹屾垚')
 ";
     }
 
     private static void CreateShortcut(string lnkPath, string targetPath, string description)
     {
         Type? shellType = Type.GetTypeFromProgID("WScript.Shell")
-            ?? throw new InvalidOperationException("无法创建快捷方式（WScript.Shell 不可用）。");
+            ?? throw new InvalidOperationException("鏃犳硶鍒涘缓蹇嵎鏂瑰紡锛圵Script.Shell 涓嶅彲鐢級銆?);
         dynamic shell = Activator.CreateInstance(shellType)!;
         dynamic shortcut = shell.CreateShortcut(lnkPath);
         shortcut.TargetPath = targetPath;
@@ -234,3 +238,4 @@ Remove-Item -LiteralPath '{dir}' -Recurse -Force
         Marshal.FinalReleaseComObject(shell);
     }
 }
+

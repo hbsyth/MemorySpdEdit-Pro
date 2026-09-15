@@ -15,7 +15,7 @@ partial class MainForm
 
     private void InitializeComponent()
     {
-        Text = "DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  Ver.001";
+        Text = AppVersion.WindowTitle;
         Size = new Size(1100, 720);
         // 覆盖固定工具栏 6×150 + 间距，缩放时工具栏尺寸不变
         MinimumSize = new Size(1080, 700);
@@ -414,7 +414,7 @@ partial class MainForm
                 "我的邮箱：hbsyth@qq.com\n" +
                 "QQ：2247718170\n" +
                 "支付宝打赏：th1qth@163.com\n\n" +
-                "DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  Ver.001",
+                $"DDR3/DDR4/DDR5 内存SPD信息修改器 by SuperGun  {AppVersion.Label}",
         };
 
         int qrY = pad + infoH + 8;

@@ -1,6 +1,6 @@
 # MemorySpdEdit Pro · 内存SPD修改工具 Pro
 
-Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（Ver.001），作者 SuperGun。
+Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（当前 **Ver26.38.0001**），作者 SuperGun。
 
 支持：
 - [spdrw](https://github.com/spdrw/spdrw.github.io) 文本串口协议
@@ -9,17 +9,21 @@ Windows 桌面端 DDR3 / DDR4 / DDR5 内存 **SPD** 读写与编辑工具（Ver.
 
 欢迎 Star / Fork / Issue。
 
+## 版本号规则
+
+格式：`Ver` + 年度后 2 位 + `.` + ISO 周度（2 位）+ `.` + 流水号（4 位）
+
+示例：`Ver26.38.0001`（2026 年第 38 周，本周第 1 次发布）
+
+- **仅在**向 GitHub **推送发布打包程序**时递增（`scripts/Publish-Release.ps1`）
+- 同一年周内流水号 +1；跨周则流水从 `0001` 起
+- 变更后写入 `Version.props`，并同步推送到 GitHub 源码仓库
+
 ## 下载
 
-正式发布页：**[Releases · Ver.001](https://github.com/hbsyth/MemorySpdEdit-Pro/releases/tag/Ver.001)**
+正式发布页：**[Releases](https://github.com/hbsyth/MemorySpdEdit-Pro/releases)**（最新标签形如 `Ver26.38.0001`）
 
-全部为 **ZIP** 压缩包，解压后使用：
-
-| 包 | 说明 |
-|---|---|
-| `MemorySpdEdit-Pro-Ver.001-Setup.zip` | **安装版**：解压后运行 `MemorySpdEdit-Pro-Setup.exe`，安装到 Program Files，可创建桌面快捷方式并卸载 |
-| `MemorySpdEdit-Pro-Ver.001-Portable.zip` | **绿色版**：解压整个目录，双击 `MemorySpdEdit-Pro.exe` 即可（自包含依赖，免安装） |
-| `MemorySpdEdit-Pro-Ver.001-Full.zip` | **完整版**：单文件 `MemorySpdEdit-Pro.exe`，运行时依赖与内置资源均打进一个文件 |
+推荐下载 **无依赖单一文件** ZIP：`MemorySpdEdit-Pro-VerYY.WW.NNNN.zip`（解压后运行 `MemorySpdEdit-Pro.exe`，需 .NET 10 Desktop Runtime x64）。
 
 使用本机 SMBus 读取 SPD 时，请右键程序「以管理员身份运行」。
 
