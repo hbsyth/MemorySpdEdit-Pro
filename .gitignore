@@ -6,6 +6,7 @@ publish_new/
 dist/
 launcher/build/
 launcher/payload.exe
+MemorySpdEdit-Pro-Ver*.zip
 
 # User-specific
 *.user
